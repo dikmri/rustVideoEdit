@@ -281,6 +281,7 @@ export const useProjectStore = create<ProjectState>()(
             const asset = findAssetById(project, assetId);
             const track = findTrackById(project, trackId);
             if (!asset || !track) return false;
+            if (track.locked) return false; // ロック済みトラックへの追加は不可
             // video/image/text → video トラックのみ、audio → audio トラックのみ。
             // 音声付き video アセットも video トラック専用(§4)。
             const wantsVideoTrack = asset.kind !== "audio";
@@ -319,7 +320,7 @@ export const useProjectStore = create<ProjectState>()(
           let newId: string | null = null;
           mutate((project) => {
             const track = findTrackById(project, trackId);
-            if (!track || track.kind !== "video") return false;
+            if (!track || track.kind !== "video" || track.locked) return false;
 
             const duration = 5; // DESIGN 未規定のため画像既定と同じ 5 秒を採用
             const id = crypto.randomUUID();
@@ -361,6 +362,7 @@ export const useProjectStore = create<ProjectState>()(
             const newTrack = findTrackById(project, newTrackId);
             if (!loc || !newTrack) return false;
             if (loc.track.kind !== newTrack.kind) return false; // 同種トラック間のみ
+            if (loc.track.locked || newTrack.locked) return false; // ロック済みトラックは移動元/先どちらも不可
 
             loc.track.clips.splice(loc.index, 1);
             const clampedStart = clampToNonOverlapping(newTrack.clips, Math.max(0, newStart), loc.clip.duration);

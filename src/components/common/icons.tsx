@@ -191,3 +191,93 @@ export function IconSpinner(props: IconProps): JSX.Element {
     </Svg>
   );
 }
+
+export function IconCursorArrow(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M5 3 19 10 12 12 10 19 5 3Z" />
+    </Svg>
+  );
+}
+
+export function IconScissors(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <circle cx="6" cy="6" r="2" />
+      <circle cx="6" cy="18" r="2" />
+      <path d="M8 8l12 12M8 16 20 4" />
+    </Svg>
+  );
+}
+
+export function IconRippleDelete(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M5 10l-3 1.5L5 13" />
+      <path d="M10 8h9M11 5h6" />
+      <path d="M9 8l1 12h8l1-12" />
+    </Svg>
+  );
+}
+
+export function IconSnap(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M6 3v8a6 6 0 0 0 12 0V3" />
+      <path d="M6 3h4M14 3h4" />
+      <path d="M6 7h4M14 7h4" />
+    </Svg>
+  );
+}
+
+export function IconTextT(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M5 5h14M12 5v14" />
+    </Svg>
+  );
+}
+
+export function IconFitScreen(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+    </Svg>
+  );
+}
+
+export function IconLock(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <rect x="5" y="11" width="14" height="9" rx="1" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </Svg>
+  );
+}
+
+export function IconUnlock(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <rect x="5" y="11" width="14" height="9" rx="1" />
+      <path d="M8 11V8a4 4 0 0 1 7.5-2" />
+    </Svg>
+  );
+}
+
+export function IconSpeakerOn(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M4 9v6h4l5 5V4L8 9H4Z" />
+      <path d="M16 9a4 4 0 0 1 0 6M18.5 7a7 7 0 0 1 0 10" />
+    </Svg>
+  );
+}
+
+export function IconSpeakerOff(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M4 9v6h4l5 5V4L8 9H4Z" />
+      <path d="M16 10l5 5M21 10l-5 5" />
+    </Svg>
+  );
+}

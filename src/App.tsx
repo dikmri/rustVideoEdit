@@ -6,6 +6,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import { UpdateBanner } from "./components/dialogs/UpdateBanner";
+import { ExportDialog } from "./components/export/ExportDialog";
 import { Header } from "./components/layout/Header";
 import { MediaBin } from "./components/mediabin/MediaBin";
 import { PreviewPanel } from "./components/preview/PreviewPanel";
@@ -13,6 +14,7 @@ import { PropertiesPanel } from "./components/properties/PropertiesPanel";
 import { Timeline } from "./components/timeline/Timeline";
 import { checkFfmpeg } from "./lib/ipc";
 import { log } from "./lib/logger";
+import { installGlobalShortcuts } from "./lib/shortcuts";
 import { useUIStore } from "./stores/uiStore";
 
 const DEFAULT_TIMELINE_HEIGHT_RATIO = 0.4;
@@ -28,6 +30,10 @@ function App(): JSX.Element {
 
   useEffect(() => {
     log.info("ui", "UI 起動");
+  }, []);
+
+  useEffect(() => {
+    return installGlobalShortcuts();
   }, []);
 
   useEffect(() => {
@@ -107,6 +113,7 @@ function App(): JSX.Element {
       <div className="app-timeline-area" style={timelineStyle}>
         <Timeline />
       </div>
+      <ExportDialog />
     </div>
   );
 }

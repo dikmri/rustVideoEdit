@@ -1,6 +1,5 @@
 // 再生コントロールバー(DESIGN.md §7, §9)。
-// Space キーでの再生/停止トグルはここでグローバルに実装する(input フォーカス時は無視)。
-import { useEffect } from "react";
+// Space キーでの再生/停止トグルは lib/shortcuts.ts に一本化されている(ここでは実装しない)。
 import { useTranslation } from "react-i18next";
 
 import {
@@ -16,13 +15,6 @@ import { formatTimecode } from "../../lib/time";
 import { useProjectStore, useTimelineDuration } from "../../stores/projectStore";
 import { useUIStore } from "../../stores/uiStore";
 
-function isEditableTarget(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null;
-  if (!el) return false;
-  const tag = el.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
-}
-
 export function TransportBar(): JSX.Element {
   const { t } = useTranslation();
   const playhead = useUIStore((s) => s.playhead);
@@ -30,18 +22,6 @@ export function TransportBar(): JSX.Element {
   const fps = useProjectStore((s) => s.project.settings.fps);
   const duration = useTimelineDuration();
   const frameDuration = fps > 0 ? 1 / fps : 1 / 30;
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent): void {
-      if (e.code !== "Space" || isEditableTarget(e.target)) return;
-      e.preventDefault();
-      const next = !useUIStore.getState().playing;
-      useUIStore.getState().setPlaying(next);
-      log.info("ui", next ? "再生開始(Space)" : "再生停止(Space)");
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
 
   function seekTo(time: number, label: string): void {
     const clamped = Math.max(0, Math.min(duration, time));

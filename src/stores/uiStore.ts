@@ -13,8 +13,8 @@ export interface DraggingAsset {
   duration: number;
 }
 
-const MIN_PX_PER_SECOND = 10;
-const MAX_PX_PER_SECOND = 400;
+export const MIN_PX_PER_SECOND = 10;
+export const MAX_PX_PER_SECOND = 400;
 
 export interface UIState {
   /** 再生ヘッド位置(秒)。 */
@@ -37,6 +37,8 @@ export interface UIState {
   dirty: boolean;
   /** MediaBin → Timeline へのポインタドラッグ中のアセット情報。 */
   draggingAsset: DraggingAsset | null;
+  /** クリップ移動ドラッグ中、ポインタがホバーしているトラック ID(ハイライト表示用)。 */
+  dragHoverTrackId: string | null;
   /** 書き出しダイアログの開閉(P3 が中身を実装)。 */
   exportDialogOpen: boolean;
   /** 設定ダイアログの開閉。 */
@@ -57,6 +59,7 @@ export interface UIState {
   setProjectPath: (path: string | null) => void;
   setDirty: (dirty: boolean) => void;
   setDraggingAsset: (dragging: DraggingAsset | null) => void;
+  setDragHoverTrackId: (trackId: string | null) => void;
   setExportDialogOpen: (open: boolean) => void;
   setSettingsDialogOpen: (open: boolean) => void;
   setFfmpegAvailable: (available: boolean | null) => void;
@@ -74,6 +77,7 @@ export const useUIStore = create<UIState>()(
     projectPath: null,
     dirty: false,
     draggingAsset: null,
+    dragHoverTrackId: null,
     exportDialogOpen: false,
     settingsDialogOpen: false,
     ffmpegAvailable: null,
@@ -92,6 +96,7 @@ export const useUIStore = create<UIState>()(
     setProjectPath: (path) => set({ projectPath: path }),
     setDirty: (dirty) => set({ dirty }),
     setDraggingAsset: (dragging) => set({ draggingAsset: dragging }),
+    setDragHoverTrackId: (trackId) => set({ dragHoverTrackId: trackId }),
     setExportDialogOpen: (open) => set({ exportDialogOpen: open }),
     setSettingsDialogOpen: (open) => set({ settingsDialogOpen: open }),
     setFfmpegAvailable: (available) => set({ ffmpegAvailable: available }),
