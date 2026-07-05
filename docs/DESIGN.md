@@ -397,3 +397,118 @@ zundo で `projectStore` の Project 部分のみ履歴化(limit 100、300ms デ
 4. **P4 リリース**: アイコン、CI/CD、updater 鍵、GitHub 公開、v0.1.0 リリース
 
 各フェーズ完了時に `bun run build`(tsc 含む)と `cargo check` を必ず通すこと。
+
+---
+
+## 13. v0.2.0 機能追加(2026-07-06 ユーザーフィードバック反映)
+
+### 13.1 テーマ(ダークモード)
+
+- 設定値 `theme: 'system' | 'light' | 'dark'`(settings.json、既定 'system')。uiStore に保持
+- 適用: `document.documentElement.dataset.theme = 'light'|'dark'`。'system' は
+  `matchMedia('(prefers-color-scheme: dark)')` を購読し変化に即時追従
+- tokens.css に `:root[data-theme="dark"]` オーバーライドを追加(墨ベースの MUJI ダーク):
+  bg #1E1D1B / panel #262522 / panel-deep #171614 / border #3A3833 / text #E8E5DE /
+  text-sub #928D83 / accent #C25A4F / accent-soft #8A4038 / clip-video #4E5E66 /
+  clip-audio #52624F / clip-text #6E5F45。既存コンポーネントはトークン経由なら自動追従する。
+  トークンを介さない直書き色(PlaybackEngine の黒ステージ等は黒のまま可)を監査すること
+- SettingsDialog にテーマ選択(システム/ライト/ダーク)を追加
+
+### 13.2 モザイクツール(wvmTool 機能同等の再実装)
+
+対象: video / image クリップのみ。`Clip` に `mosaics: MosaicRegion[]` を追加
+(既存 .rvep 読込時は欠落フィールドを [] で補完。他の欠落フィールドも同様の防御を loadProject に入れる)。
+
+```ts
+interface MosaicKeyframe {
+  time: number;      // クリップローカル秒(出力時間基準、0..duration)
+  cx: number; cy: number; w: number; h: number; // ソースピクセル座標(変形前)
+  rotation: number;  // 度
+  visible: boolean;
+}
+interface MosaicRegion {
+  id: string;
+  enabled: boolean;
+  blockSize: number;         // モザイク粒度(ソースpx、4..80、既定16)
+  keyframes: MosaicKeyframe[]; // time 昇順、常に 1 個以上
+}
+```
+
+補間規則(プレビュー/書き出しで共通。src/lib/mosaic.ts に実装し共有):
+cx/cy/w/h/rotation は隣接キーフレーム間で線形補間。最初より前・最後より後はホールド。
+visible はステップ(左側キーフレームの値)。キーフレーム 1 個なら常にその値。
+
+**プレビュー**(PlaybackEngine): 各 video レイヤーの `<video>/<img>` の直上に同サイズの
+`<canvas>`(ソース解像度)を重ね、rAF ごとに: 領域が無ければ clear のみ。あれば
+(1) オフスクリーン canvas にフレーム全体を 1/blockSize で縮小描画(blockSize が異なる領域ごと)、
+(2) メイン canvas で回転矩形パスに clip し、imageSmoothingEnabled=false で拡大描画。
+canvas はレイヤー wrapper 内にあるため CSS transform(scale/rotate/opacity/filter)は自動で共通適用される。
+
+**書き出し**(filtergraph.rs): クリップチェーンを「ローカル時間処理→最後に start シフト」へ再構成する:
+`trim → setpts=(PTS-STARTPTS)/speed → fps → [モザイク] → scale → format → rotate → eq → gblur →
+colorchannelmixer → fade(st はクリップローカル: 0 / duration-fadeOut) → setpts=PTS+start/TB` →
+overlay(enable は従来通りタイムライン時刻)。これによりモザイクの t 式がキーフレーム time と直接一致する。
+各 region(enabled のみ)を順に適用(実機検証済みプロトタイプ):
+
+```
+[in]split[vo][vm];
+[vm]scale=ceil(iw/{bs}):ceil(ih/{bs}),scale={W}:{H}:flags=neighbor,format=yuva420p[pix];
+color=c=black:s={W/4}x{H/4}:r={fps}:d={durLocal}[mb];
+[mb]geq=lum='st(0,X*4-({cx(t)}));st(1,Y*4-({cy(t)}));st(4,{rot(t)}*PI/180);
+  st(2,ld(0)*cos(ld(4))+ld(1)*sin(ld(4)));st(3,-ld(0)*sin(ld(4))+ld(1)*cos(ld(4)));
+  255*lt(abs(ld(2)),({w(t)})/2)*lt(abs(ld(3)),({h(t)})/2)*({vis(t)})':cb=128:cr=128,
+  format=gray,scale={W}:{H}[mask];
+[pix][mask]alphamerge[pixa];
+[vo][pixa]overlay=0:0[out]
+```
+
+`{cx(t)}` 等はキーフレームの区分線形式(`if(lt(T,t1), lerp(v0,v1,(T-t0)/(t1-t0)), if(...))` を
+ネスト。geq では時間変数は T)。W/H はソース解像度(fps フィルタ後)。マスクは 1/4 解像度で
+生成し拡大(性能対策、検証済み)。visible は 0/1 のステップ式。
+
+**UI**:
+- PropertiesPanel に「モザイク」セクション(video/image クリップ選択時): 領域リスト
+  (追加・削除・enabled トグル・blockSize スライダ)、選択領域のキーフレーム一覧
+  (時刻表示・クリックでその時刻へシーク・削除)、「現在位置にキーフレーム追加」ボタン、
+  「プレビューで編集」トグル(uiStore.mosaicEditMode)
+- mosaicEditMode 中の PreviewSurface: 選択クリップのレイヤー上に編集オーバーレイを表示。
+  領域矩形+コーナーハンドル 4 つ+回転ハンドル(上中央)。空き領域のドラッグで新規領域作成
+  (wvmTool 同様、作成後は選択状態へ)。ドラッグ移動/リサイズ/回転
+- 編集確定時: playhead 位置(クリップローカル時刻)にキーフレームが存在すれば更新、
+  無ければ現在の補間値ベースで新規キーフレームを自動追加(wvmTool の挙動を踏襲)
+- ステージ座標⇔ソース座標の変換は、PlaybackEngine と同じ transform 値から DOMMatrix を
+  組み立てて逆行列で行う(クリップの scale/rotation/x/y とステージスケールを含む)
+- ショートカット(mosaicEditMode 中のみ): Q/E 回転 ∓5°、R 回転リセット、K キーフレーム追加、
+  H visible トグルをキーフレーム記録
+
+### 13.3 MediaBin ホバープレビュー
+
+video アセットのタイルに pointer が乗ったら、サムネイル `<img>` を共有の再生用 `<video muted>`
+(convertFileSrc)に差し替え、タイル内の pointer X 位置に応じて `currentTime = ratio * duration`
+でスクラブ。pointer が離れたらサムネイルへ戻す。`<video>` 要素はビン全体で 1 つを使い回す
+(デコーダ節約)。音は出さない。エラー時はサムネイルのまま。
+
+### 13.4 書き出し完了音
+
+- src/lib/chime.ts: WebAudio によるランタイム合成(音源ファイル不使用)。
+  playSuccessChime(): 「ポポンッ」= G5(783.99Hz) 0ms → G5 110ms → D6(1174.66Hz) 220ms。
+  各音 sine + 1 オクターブ上(gain 0.3)の 2 オシレータ、exponentialRampToValueAtTime で
+  0.35〜0.5 秒減衰、マスター gain 0.22。3 音目のみ長め(0.6s)
+- playErrorTone(): 220Hz 単音 0.25 秒(控えめ)
+- export:done で success、export:error で error を再生
+- settings.json / SettingsDialog に `soundEnabled: boolean`(既定 true)
+
+### 13.5 「ソースに合わせる」書き出しプリセット
+
+- probe_media で `bitrateKbps: number | null`(format.bit_rate/1000)を MediaAsset に追加
+  (Rust struct + TS 型。旧プロジェクト読込時は null 補完)
+- ExportDialog のプリセット先頭に「ソースに合わせる」を追加し、プロジェクトに video アセットが
+  1 つ以上あれば**既定選択**にする。基準 = assets 配列で最初の video アセット(取込順で最初):
+  width/height/fps をそのまま、codec はアセットの codec 名に hevc/h265 を含めば hevc、それ以外 h264、
+  CRF 20、音声 192kbps。プリセット説明に「1920x1080 / 30fps(元: ファイル名)」の形で表示
+- video アセットが無い場合は従来通り YouTube 1080p を既定選択
+
+### 13.6 その他
+
+- 新規 UI 文字列は 7 言語すべてに追加(キー欠落禁止)。新規操作はすべて logger 記録
+- バージョン 0.2.0(tauri.conf.json / package.json)

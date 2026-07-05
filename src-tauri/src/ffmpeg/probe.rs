@@ -32,6 +32,8 @@ pub struct MediaAsset {
     pub has_audio: bool,
     pub codec: Option<String>,
     pub thumbnail: Option<String>,
+    /// format.bit_rate(bps 文字列)を kbps に変換した値。取得できない場合は None(§13.5)。
+    pub bitrate_kbps: Option<f64>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -45,6 +47,7 @@ struct FfprobeOutput {
 #[derive(Debug, Default, Deserialize)]
 struct FfprobeFormat {
     duration: Option<String>,
+    bit_rate: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -166,6 +169,13 @@ pub fn probe_media(path: &str) -> Result<MediaAsset, String> {
         .and_then(|s| s.r_frame_rate.as_deref())
         .and_then(parse_frame_rate);
 
+    let bitrate_kbps = parsed
+        .format
+        .bit_rate
+        .as_deref()
+        .and_then(|s| s.parse::<f64>().ok())
+        .map(|bps| bps / 1000.0);
+
     let codec = match kind {
         AssetKind::Video => video_stream.and_then(|s| s.codec_name.clone()),
         AssetKind::Audio => audio_stream.and_then(|s| s.codec_name.clone()),
@@ -194,6 +204,7 @@ pub fn probe_media(path: &str) -> Result<MediaAsset, String> {
         has_audio,
         codec,
         thumbnail: None,
+        bitrate_kbps,
     };
 
     info!(
