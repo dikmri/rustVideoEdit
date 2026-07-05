@@ -1,0 +1,17 @@
+:root {
+  --bg: #efece6; /* 生成り(アプリ背景) */
+  --panel: #f7f5f0; /* パネル面 */
+  --panel-deep: #e7e3db; /* タイムライン背景等の一段深い面 */
+  --border: #d9d4ca; /* 1px 罫線 */
+  --text: #3c3a36; /* 墨色 */
+  --text-sub: #8a857c;
+  --accent: #9e3b32; /* 臙脂。選択枠・主要ボタン・録画的要素のみに限定使用 */
+  --accent-soft: #c9776f;
+  --clip-video: #a8b8bf; /* 青灰 */
+  --clip-audio: #a9bca4; /* 灰緑 */
+  --clip-text: #c9b08c; /* 亜麻 */
+  --radius: 3px;
+  --font:
+    "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", "Segoe UI", system-ui,
+    sans-serif;
+}
