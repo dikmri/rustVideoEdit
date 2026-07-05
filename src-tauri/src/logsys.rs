@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use tauri::command;
 use tracing::Subscriber;
 use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::filter::{LevelFilter, Targets};
 use tracing_subscriber::fmt::format::Writer;
 use tracing_subscriber::fmt::time::FormatTime;
 use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields};
@@ -81,7 +82,17 @@ pub fn init() -> (WorkerGuard, PathBuf) {
         .with_ansi(false)
         .event_format(HumanReadableFormatter);
 
+    // 既定 INFO。HTTP クライアント系の TRACE/DEBUG ノイズは動作確認ログの可読性を
+    // 損ねるため WARN まで絞る(実機ログで hyper_util の TRACE 混入を確認済み)。
+    let filter = Targets::new()
+        .with_default(LevelFilter::INFO)
+        .with_target("hyper_util", LevelFilter::WARN)
+        .with_target("hyper", LevelFilter::WARN)
+        .with_target("rustls", LevelFilter::WARN)
+        .with_target("reqwest", LevelFilter::WARN);
+
     tracing_subscriber::registry()
+        .with(filter)
         .with(file_layer)
         .with(stdout_layer)
         .init();
