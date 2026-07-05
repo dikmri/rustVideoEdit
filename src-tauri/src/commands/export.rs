@@ -53,6 +53,59 @@ pub struct TextStyle {
     pub background: Option<String>,
 }
 
+fn default_true() -> bool {
+    true
+}
+
+fn default_block_size() -> f64 {
+    16.0
+}
+
+/// `src/types/model.ts` の `MosaicKeyframe` に対応(DESIGN.md §13.2)。
+/// 後方互換のため全フィールドに `#[serde(default)]` を付与する。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MosaicKeyframe {
+    /// クリップローカル秒(出力時間基準、0..duration)。
+    #[serde(default)]
+    pub time: f64,
+    /// 中心 X(ソースピクセル座標、変形前)。
+    #[serde(default)]
+    pub cx: f64,
+    /// 中心 Y(ソースピクセル座標、変形前)。
+    #[serde(default)]
+    pub cy: f64,
+    /// 幅(ソースピクセル)。
+    #[serde(default)]
+    pub w: f64,
+    /// 高さ(ソースピクセル)。
+    #[serde(default)]
+    pub h: f64,
+    /// 回転(度)。
+    #[serde(default)]
+    pub rotation: f64,
+    /// 表示フラグ(ステップ補間)。
+    #[serde(default = "default_true")]
+    pub visible: bool,
+}
+
+/// `src/types/model.ts` の `MosaicRegion` に対応(DESIGN.md §13.2)。
+/// 後方互換のため全フィールドに `#[serde(default)]` を付与する。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MosaicRegion {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// モザイク粒度(ソース px、4..80、既定 16)。
+    #[serde(default = "default_block_size")]
+    pub block_size: f64,
+    /// time 昇順、常に 1 個以上(空の場合はスキップされる)。
+    #[serde(default)]
+    pub keyframes: Vec<MosaicKeyframe>,
+}
+
 /// DESIGN.md §5 の `VClip`。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,6 +124,9 @@ pub struct VClip {
     pub asset_w: Option<f64>,
     pub asset_h: Option<f64>,
     pub is_image: bool,
+    /// モザイク領域(DESIGN.md §13.2)。旧フロントからの spec には無いため default。
+    #[serde(default)]
+    pub mosaics: Vec<MosaicRegion>,
 }
 
 /// DESIGN.md §5 の `AClip`。
