@@ -1,0 +1,783 @@
+/* リセット + 共通部品(DESIGN.md §9)。
+   無印良品風: 影なし・1px 罫線・角丸 3px・8px グリッドを徹底する。 */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+
+input,
+textarea,
+button,
+select {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+a {
+  color: inherit;
+}
+
+svg {
+  display: block;
+}
+
+/* ---------------------------------------------------------------------- */
+/* ボタン                                                                   */
+/* ---------------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+  transition: background-color 0.1s ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--panel-deep);
+}
+
+.btn:active:not(:disabled) {
+  background: var(--border);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn-accent {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-accent:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent-soft);
+}
+
+.btn-accent:active:not(:disabled) {
+  background: var(--accent);
+}
+
+.btn-icon {
+  width: 28px;
+  padding: 0;
+}
+
+.btn-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--panel-deep);
+}
+
+/* ---------------------------------------------------------------------- */
+/* フォーム部品                                                             */
+/* ---------------------------------------------------------------------- */
+
+input[type="text"],
+input[type="number"],
+input[type="search"],
+textarea,
+select {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  outline: none;
+}
+
+textarea {
+  height: auto;
+  padding: 6px 8px;
+  resize: vertical;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent);
+}
+
+select {
+  appearance: none;
+  padding-right: 24px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M4 6l4 4 4-4' fill='none' stroke='%238A857C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+}
+
+input[type="color"] {
+  width: 26px;
+  height: 26px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+label {
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+/* スライダ */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 16px;
+  background: transparent;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-moz-range-track {
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
+}
+
+/* ドラッグ増減できる数値入力(properties/DragNumber) */
+.drag-number {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  cursor: ew-resize;
+}
+
+.drag-number input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  height: auto;
+  cursor: text;
+  text-align: right;
+}
+
+.drag-number input:focus {
+  outline: none;
+}
+
+/* ---------------------------------------------------------------------- */
+/* ダイアログ                                                               */
+/* ---------------------------------------------------------------------- */
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(60, 58, 54, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.dialog {
+  min-width: 320px;
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 24px;
+}
+
+.dialog-title {
+  margin: 0 0 16px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+/* ---------------------------------------------------------------------- */
+/* コンテキストメニュー                                                     */
+/* ---------------------------------------------------------------------- */
+
+.context-menu {
+  position: fixed;
+  min-width: 160px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 4px;
+  z-index: 200;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.context-menu-item:hover {
+  background: var(--panel-deep);
+}
+
+/* ---------------------------------------------------------------------- */
+/* レイアウト汎用ユーティリティ                                              */
+/* ---------------------------------------------------------------------- */
+
+.row {
+  display: flex;
+  align-items: center;
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 8px 0;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.text-sub {
+  color: var(--text-sub);
+}
+
+/* ---------------------------------------------------------------------- */
+/* スクロールバー(細身化)                                                  */
+/* ---------------------------------------------------------------------- */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-sub);
+}
+
+/* ---------------------------------------------------------------------- */
+/* アニメーション                                                           */
+/* ---------------------------------------------------------------------- */
+
+@keyframes icon-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.icon-spin {
+  animation: icon-spin 0.8s linear infinite;
+}
+
+/* ---------------------------------------------------------------------- */
+/* アプリ全体レイアウト(App.tsx)                                          */
+/* ---------------------------------------------------------------------- */
+
+.app-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+.app-header {
+  flex: 0 0 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.app-header-left {
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.app-header-name {
+  font-size: 11px;
+  color: var(--text-sub);
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.app-header-project-name {
+  cursor: text;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+
+.app-header-project-name:hover {
+  background: var(--panel-deep);
+}
+
+.app-header-dirty {
+  color: var(--accent);
+  margin-left: 4px;
+}
+
+.app-header-rename-input {
+  height: 24px;
+  min-width: 160px;
+}
+
+.app-header-actions {
+  gap: 8px;
+}
+
+.app-header-right {
+  gap: 12px;
+}
+
+.app-header-lang {
+  gap: 4px;
+}
+
+.app-header-lang select {
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 0 4px;
+}
+
+.ffmpeg-banner {
+  flex: 0 0 auto;
+  padding: 6px 16px;
+  background: #f3e6c8;
+  color: var(--text);
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.update-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 16px;
+  background: var(--panel-deep);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.app-body {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+}
+
+.app-col-mediabin {
+  width: 260px;
+  flex: 0 0 260px;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  overflow: auto;
+  min-height: 0;
+  position: relative;
+}
+
+.app-col-preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  background: var(--panel-deep);
+  display: flex;
+}
+
+.app-col-properties {
+  width: 300px;
+  flex: 0 0 300px;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  overflow: auto;
+  min-height: 0;
+}
+
+.app-timeline-resizer {
+  flex: 0 0 6px;
+  height: 6px;
+  cursor: row-resize;
+  background: transparent;
+}
+
+.app-timeline-resizer:hover {
+  background: var(--border);
+}
+
+.app-timeline-area {
+  flex: 0 0 auto;
+  min-height: 120px;
+  border-top: 1px solid var(--border);
+  background: var(--panel-deep);
+  overflow: hidden;
+}
+
+.timeline-placeholder {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Preview                                                                 */
+/* ---------------------------------------------------------------------- */
+
+.preview-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  padding: 16px;
+  gap: 12px;
+}
+
+.preview-surface {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-deep);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.preview-stage {
+  position: relative;
+  background: #000;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.transport-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.transport-timecode {
+  margin-left: 12px;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------------------- */
+/* MediaBin                                                                */
+/* ---------------------------------------------------------------------- */
+
+.mediabin-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 8px;
+  gap: 8px;
+  position: relative;
+}
+
+.mediabin-dragover {
+  outline: 2px dashed var(--accent);
+  outline-offset: -4px;
+}
+
+.mediabin-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mediabin-importing {
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-sub);
+}
+
+.mediabin-error {
+  font-size: 11px;
+  color: var(--accent);
+  padding: 4px 8px;
+  border: 1px solid var(--accent-soft);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.mediabin-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-sub);
+  padding: 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+.mediabin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  overflow-y: auto;
+  padding-bottom: 8px;
+}
+
+.mediabin-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: grab;
+}
+
+.mediabin-item:hover {
+  background: var(--panel-deep);
+}
+
+.mediabin-item-selected {
+  border-color: var(--accent);
+}
+
+.mediabin-thumb {
+  aspect-ratio: 16 / 9;
+  background: var(--panel-deep);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-sub);
+  overflow: hidden;
+}
+
+.mediabin-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mediabin-name {
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mediabin-duration {
+  font-size: 10px;
+}
+
+.mediabin-dropzone-hint {
+  position: absolute;
+  inset: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(158, 59, 50, 0.06);
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+  font-size: 12px;
+  color: var(--accent);
+  pointer-events: none;
+}
+
+.media-drag-ghost {
+  position: fixed;
+  transform: translate(8px, 8px);
+  padding: 4px 8px;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  font-size: 11px;
+  pointer-events: none;
+  z-index: 300;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Properties                                                              */
+/* ---------------------------------------------------------------------- */
+
+.properties-panel {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.properties-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.properties-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.properties-section:last-child {
+  border-bottom: none;
+}
+
+.properties-section-title {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-sub);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.properties-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.properties-row label {
+  flex: 0 0 88px;
+}
+
+.properties-row input[type="range"] {
+  flex: 1;
+}
+
+.properties-checkbox {
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.effect-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}

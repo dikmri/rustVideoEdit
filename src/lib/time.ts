@@ -22,3 +22,18 @@ export function formatTimecode(sec: number, fps: number): string {
 
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}:${pad(frames)}`;
 }
+
+/**
+ * 秒数を短い "mm:ss"(1 時間以上は "H:MM:SS")形式に変換する(MediaBin のクリップ長表示用)。
+ */
+export function formatDurationShort(sec: number): string {
+  const total = Math.max(0, Math.round(sec));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const pad = (n: number): string => n.toString().padStart(2, "0");
+  if (hours > 0) {
+    return `${hours}:${pad(minutes)}:${pad(seconds)}`;
+  }
+  return `${minutes}:${pad(seconds)}`;
+}
