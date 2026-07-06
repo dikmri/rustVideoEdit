@@ -89,7 +89,7 @@ svg {
 .btn-accent {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .btn-accent:hover:not(:disabled) {
@@ -149,6 +149,11 @@ select {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M4 6l4 4 4-4' fill='none' stroke='%238A857C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
   background-repeat: no-repeat;
   background-position: right 6px center;
+}
+
+/* ダークテーマではドロップダウン矢印の色を text-sub 相当へ差し替える(data URI のためトークン参照不可)。 */
+:root[data-theme="dark"] select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M4 6l4 4 4-4' fill='none' stroke='%23928D83' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 
 input[type="color"] {
@@ -240,7 +245,7 @@ input[type="range"]::-moz-range-thumb {
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(60, 58, 54, 0.35);
+  background: var(--overlay-bg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -456,7 +461,7 @@ input[type="range"]::-moz-range-thumb {
 .ffmpeg-banner {
   flex: 0 0 auto;
   padding: 6px 16px;
-  background: #f3e6c8;
+  background: var(--warning-bg);
   color: var(--text);
   font-size: 12px;
   border-bottom: 1px solid var(--border);
@@ -671,7 +676,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .timeline-track-header-highlighted {
-  background: rgba(158, 59, 50, 0.1);
+  background: var(--accent-tint);
 }
 
 .timeline-track-name {
@@ -713,15 +718,15 @@ input[type="range"]::-moz-range-thumb {
 .timeline-lane-locked {
   background-image: repeating-linear-gradient(
     45deg,
-    rgba(60, 58, 54, 0.04),
-    rgba(60, 58, 54, 0.04) 6px,
+    var(--ink-faint),
+    var(--ink-faint) 6px,
     transparent 6px,
     transparent 12px
   );
 }
 
 .timeline-lane-highlighted {
-  background-color: rgba(158, 59, 50, 0.1);
+  background-color: var(--accent-tint);
 }
 
 .timeline-lane-dropzone-invalid {
@@ -733,13 +738,13 @@ input[type="range"]::-moz-range-thumb {
   top: 4px;
   bottom: 4px;
   border-radius: var(--radius);
-  background: rgba(158, 59, 50, 0.18);
+  background: var(--accent-tint-strong);
   border: 1px dashed var(--accent);
   pointer-events: none;
 }
 
 .timeline-drop-preview-invalid {
-  background: rgba(60, 58, 54, 0.1);
+  background: var(--ink-weak);
   border-color: var(--text-sub);
 }
 
@@ -804,7 +809,7 @@ input[type="range"]::-moz-range-thumb {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 10px;
-  color: rgba(60, 58, 54, 0.65);
+  color: var(--clip-text-sub);
 }
 
 .timeline-clip-speed-badge {
@@ -814,8 +819,8 @@ input[type="range"]::-moz-range-thumb {
   font-size: 9px;
   padding: 0 3px;
   border-radius: 2px;
-  background: rgba(60, 58, 54, 0.55);
-  color: #fff;
+  background: var(--clip-badge-bg);
+  color: #fff; /* バッジ背景は両テーマとも暗色のため固定でよい */
 }
 
 .timeline-clip-fade-tri-in,
@@ -830,13 +835,13 @@ input[type="range"]::-moz-range-thumb {
 .timeline-clip-fade-tri-in {
   left: 0;
   border-width: 9px 9px 0 0;
-  border-color: rgba(60, 58, 54, 0.45) transparent transparent transparent;
+  border-color: var(--clip-fade-tri) transparent transparent transparent;
 }
 
 .timeline-clip-fade-tri-out {
   right: 0;
   border-width: 9px 0 0 9px;
-  border-color: rgba(60, 58, 54, 0.45) transparent transparent transparent;
+  border-color: var(--clip-fade-tri) transparent transparent transparent;
 }
 
 .timeline-clip-handle {
@@ -1021,6 +1026,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .mediabin-thumb {
+  position: relative; /* ホバープレビュー video の重ね合わせ基準(§13.3) */
   aspect-ratio: 16 / 9;
   background: var(--panel-deep);
   border: 1px solid var(--border);
@@ -1036,6 +1042,17 @@ input[type="range"]::-moz-range-thumb {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* MediaBin ホバープレビュー(§13.3)。ビン全体で共有する 1 つの <video muted>。
+   サムネイル <img> の上に重ね、フレームが出るまでは下のサムネイルが見える。 */
+.mediabin-hover-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
 }
 
 .mediabin-name {
@@ -1055,7 +1072,7 @@ input[type="range"]::-moz-range-thumb {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(158, 59, 50, 0.06);
+  background: var(--accent-faint);
   border: 2px dashed var(--accent);
   border-radius: var(--radius);
   font-size: 12px;

@@ -7,6 +7,9 @@ import type { AssetKind } from "../types/model";
 
 export type Tool = "select" | "razor";
 
+/** テーマ設定(DESIGN.md §13.1)。settings.json に永続化される。 */
+export type ThemePreference = "system" | "light" | "dark";
+
 export interface DraggingAsset {
   assetId: string;
   kind: AssetKind;
@@ -45,6 +48,10 @@ export interface UIState {
   settingsDialogOpen: boolean;
   /** ffmpeg/ffprobe の可用性。未チェックは null。 */
   ffmpegAvailable: boolean | null;
+  /** テーマ設定(§13.1)。既定 'system'。適用と永続化は lib/appSettings.ts が担う。 */
+  theme: ThemePreference;
+  /** 書き出し完了音の有効/無効(§13.4)。既定 true。永続化は lib/appSettings.ts が担う。 */
+  soundEnabled: boolean;
 
   setPlayhead: (t: number) => void;
   setPlaying: (playing: boolean) => void;
@@ -63,6 +70,8 @@ export interface UIState {
   setExportDialogOpen: (open: boolean) => void;
   setSettingsDialogOpen: (open: boolean) => void;
   setFfmpegAvailable: (available: boolean | null) => void;
+  setTheme: (theme: ThemePreference) => void;
+  setSoundEnabled: (enabled: boolean) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -81,6 +90,8 @@ export const useUIStore = create<UIState>()(
     exportDialogOpen: false,
     settingsDialogOpen: false,
     ffmpegAvailable: null,
+    theme: "system",
+    soundEnabled: true,
 
     setPlayhead: (t) => set({ playhead: Math.max(0, t) }),
     setPlaying: (playing) => set({ playing }),
@@ -100,5 +111,7 @@ export const useUIStore = create<UIState>()(
     setExportDialogOpen: (open) => set({ exportDialogOpen: open }),
     setSettingsDialogOpen: (open) => set({ settingsDialogOpen: open }),
     setFfmpegAvailable: (available) => set({ ffmpegAvailable: available }),
+    setTheme: (theme) => set({ theme }),
+    setSoundEnabled: (enabled) => set({ soundEnabled: enabled }),
   })),
 );

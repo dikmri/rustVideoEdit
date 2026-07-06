@@ -110,6 +110,8 @@
 
   "export.title": "Exportar",
   "export.preset.label": "Preajuste",
+  "export.preset.matchSource": "Ajustar a la fuente",
+  "export.preset.matchSourceDesc": "{{width}}x{{height}} / {{fps}} fps (origen: {{name}})",
   "export.preset.youtube1080p": "YouTube 1080p",
   "export.preset.uhd4k": "4K",
   "export.preset.hd720p": "HD 720p",
@@ -140,6 +142,12 @@
 
   "settingsDialog.title": "Ajustes",
   "settingsDialog.language": "Idioma",
+  "settingsDialog.theme": "Tema",
+  "settingsDialog.themeSystem": "Sistema",
+  "settingsDialog.themeLight": "Claro",
+  "settingsDialog.themeDark": "Oscuro",
+  "settingsDialog.soundEnabled": "Sonido al completar la exportación",
+  "settingsDialog.soundPreview": "Escuchar",
 
   "aboutDialog.title": "Acerca de rustVideoEdit",
   "aboutDialog.version": "Versión",

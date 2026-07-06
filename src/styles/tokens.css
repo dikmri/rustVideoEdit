@@ -14,4 +14,44 @@
   --font:
     "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", "Segoe UI", system-ui,
     sans-serif;
+
+  /* 派生トークン(§13.1 の監査で base.css の直書き色をトークン化したもの) */
+  --overlay-bg: rgba(60, 58, 54, 0.35); /* ダイアログ背景幕 */
+  --accent-faint: rgba(158, 59, 50, 0.06); /* ドロップ受付面の淡い塗り */
+  --accent-tint: rgba(158, 59, 50, 0.1); /* ドラッグホバー強調 */
+  --accent-tint-strong: rgba(158, 59, 50, 0.18); /* ドロッププレビュー */
+  --ink-faint: rgba(60, 58, 54, 0.04); /* ロック済みレーンの縞 */
+  --ink-weak: rgba(60, 58, 54, 0.1); /* 無効ドロッププレビュー等 */
+  --clip-text-sub: rgba(60, 58, 54, 0.65); /* クリップ内サブ文字 */
+  --clip-fade-tri: rgba(60, 58, 54, 0.45); /* フェード三角 */
+  --clip-badge-bg: rgba(60, 58, 54, 0.55); /* 速度バッジ背景 */
+  --on-accent: #ffffff; /* accent 塗り上の文字色 */
+  --warning-bg: #f3e6c8; /* ffmpeg 警告帯の背景 */
+}
+
+/* ダークテーマ(DESIGN.md §13.1: 墨ベースの MUJI ダーク)。
+   document.documentElement.dataset.theme = "dark" で有効化する。 */
+:root[data-theme="dark"] {
+  --bg: #1e1d1b;
+  --panel: #262522;
+  --panel-deep: #171614;
+  --border: #3a3833;
+  --text: #e8e5de;
+  --text-sub: #928d83;
+  --accent: #c25a4f;
+  --accent-soft: #8a4038;
+  --clip-video: #4e5e66;
+  --clip-audio: #52624f;
+  --clip-text: #6e5f45;
+
+  --overlay-bg: rgba(0, 0, 0, 0.5);
+  --accent-faint: rgba(194, 90, 79, 0.1);
+  --accent-tint: rgba(194, 90, 79, 0.16);
+  --accent-tint-strong: rgba(194, 90, 79, 0.26);
+  --ink-faint: rgba(232, 229, 222, 0.05);
+  --ink-weak: rgba(232, 229, 222, 0.12);
+  --clip-text-sub: rgba(232, 229, 222, 0.75);
+  --clip-fade-tri: rgba(232, 229, 222, 0.5);
+  --clip-badge-bg: rgba(0, 0, 0, 0.55);
+  --warning-bg: #4a4130;
 }
