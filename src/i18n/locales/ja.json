@@ -5,7 +5,7 @@
   "common.delete": "削除",
   "common.none": "なし",
 
-  "app.name": "rustVideoEdit",
+  "app.name": "SOBA Video Editor",
 
   "header.new": "新規",
   "header.open": "開く",
@@ -20,7 +20,7 @@
   "header.confirmDiscardMessage": "保存されていない変更があります。続行すると変更は失われます。",
   "header.saveDialogTitle": "プロジェクトを保存",
   "header.openDialogTitle": "プロジェクトを開く",
-  "header.projectFileFilterName": "rustVideoEdit プロジェクト",
+  "header.projectFileFilterName": "SOBA Video Editor プロジェクト",
   "header.ffmpegMissing": "ffmpeg/ffprobe が見つかりません。読み込みや書き出しが行えません。",
   "header.saveFailed": "プロジェクトの保存に失敗しました",
   "header.loadFailed": "プロジェクトの読込に失敗しました",
@@ -162,7 +162,7 @@
   "settingsDialog.soundEnabled": "書き出し完了音",
   "settingsDialog.soundPreview": "試聴",
 
-  "aboutDialog.title": "rustVideoEdit について",
+  "aboutDialog.title": "SOBA Video Editor について",
   "aboutDialog.version": "バージョン",
   "aboutDialog.description": "Rust 製のクロスプラットフォーム動画編集ソフトです。",
 

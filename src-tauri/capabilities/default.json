@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "rustVideoEdit のデフォルト権限セット",
+  "description": "SOBA Video Editor のデフォルト権限セット",
   "windows": ["main"],
   "permissions": [
     "core:default",

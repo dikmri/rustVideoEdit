@@ -2,13 +2,18 @@
 // mosaicEditMode 中、選択クリップ(video/image)のレイヤー上に領域矩形+コーナーハンドル 4 つ
 // +回転ハンドル(上中央)を表示する。空き領域のドラッグで新規領域を作成(作成後選択)。
 // ステージ座標⇔ソース座標は PlaybackEngine と同じ transform 値から DOMMatrix を組み立てて
-// 逆行列で変換する。ドラッグ中は store を連打せずローカル state でプレビューし、
+// 逆行列で変換する。ドラッグ中は projectStore を連打せずローカル state でプレビューし、
 // pointerup 時に upsertMosaicKeyframe で確定する(±半フレーム以内の既存キーフレームは更新)。
+// 加えて、ドラッグ中は uiStore.mosaicDraft へも同じ値を書き込み、PlaybackEngine が
+// canvas モザイクをリアルタイムに(store 確定前でも)反映できるようにする。
+// pointerup での確定は「projectStore への commit → mosaicDraft を null へ」の順で行い、
+// 確定直後の 1 フレームで一時的に古い値へ戻るチラつきを防ぐ。pointercancel/Escape での
+// キャンセル時は commit せず mosaicDraft を null に戻すのみ。
 import { useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 
 import { log } from "../../lib/logger";
-import { sampleRegion } from "../../lib/mosaic";
+import { MOSAIC_BLOCK_SIZE_DEFAULT, sampleRegion } from "../../lib/mosaic";
 import type { MosaicSample } from "../../lib/mosaic";
 import { useProjectStore } from "../../stores/projectStore";
 import { useUIStore } from "../../stores/uiStore";
@@ -138,6 +143,7 @@ export function MosaicEditOverlay({ stageScale }: { stageScale: number }): JSX.E
     if (!region) return;
     const base = sampleRegion(region, tLocal);
     if (!base) return;
+    const blockSize = region.blockSize;
 
     useUIStore.getState().setSelectedMosaicRegionId(regionId);
 
@@ -145,6 +151,7 @@ export function MosaicEditOverlay({ stageScale }: { stageScale: number }): JSX.E
     let current: MosaicSample = { ...base };
     let moved = false;
     setDraft({ regionId, sample: current });
+    useUIStore.getState().setMosaicDraft({ clipId: targetClip.id, regionId, blockSize, sample: current });
 
     const handleMove = (ev: PointerEvent): void => {
       moved = true;
@@ -181,21 +188,47 @@ export function MosaicEditOverlay({ stageScale }: { stageScale: number }): JSX.E
         };
       }
       setDraft({ regionId, sample: current });
+      useUIStore.getState().setMosaicDraft({ clipId: targetClip.id, regionId, blockSize, sample: current });
     };
 
-    const handleUp = (): void => {
+    const removeListeners = (): void => {
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
-      setDraft(null);
+      window.removeEventListener("pointercancel", handleAbort);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+
+    // 確定: projectStore への commit を mosaicDraft の null 化より先に行う。同一イベント内で
+    // 行うことで、次の描画は draft ではなく確定値を読むため、チラつき(一瞬旧値に戻る)を防ぐ。
+    const handleUp = (): void => {
+      removeListeners();
       if (moved) {
         commitKeyframe(regionId, current);
         const modeLabel = mode === "move" ? "move" : mode === "rotate" ? "rotate" : "resize";
         log.info("ui", `モザイク領域編集: clipId=${targetClip.id} regionId=${regionId} mode=${modeLabel}`);
       }
+      setDraft(null);
+      useUIStore.getState().setMosaicDraft(null);
+    };
+
+    // キャンセル(pointercancel/Escape): commit せずドラフトのみ破棄する。
+    const handleAbort = (): void => {
+      removeListeners();
+      setDraft(null);
+      useUIStore.getState().setMosaicDraft(null);
+    };
+
+    const handleKeyDown = (ev: KeyboardEvent): void => {
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        handleAbort();
+      }
     };
 
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handleAbort);
+    window.addEventListener("keydown", handleKeyDown);
   }
 
   /** 空き領域ドラッグで新規領域を作成する。クリックのみ(閾値未満)は選択解除。 */
@@ -218,12 +251,25 @@ export function MosaicEditOverlay({ stageScale }: { stageScale: number }): JSX.E
         visible: true,
       };
       setDraft({ regionId: null, sample: current });
+      useUIStore.getState().setMosaicDraft({
+        clipId: targetClip.id,
+        regionId: null,
+        blockSize: MOSAIC_BLOCK_SIZE_DEFAULT,
+        sample: current,
+      });
     };
 
-    const handleUp = (): void => {
+    const removeListeners = (): void => {
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
-      setDraft(null);
+      window.removeEventListener("pointercancel", handleAbort);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+
+    // 確定: projectStore への commit(領域追加+キーフレーム)を mosaicDraft の null 化より
+    // 先に行う(チラつき防止、startRegionDrag の handleUp と同じ理由)。
+    const handleUp = (): void => {
+      removeListeners();
       if (current && current.w >= MIN_CREATE_SIZE_SRC_PX && current.h >= MIN_CREATE_SIZE_SRC_PX) {
         const store = useProjectStore.getState();
         const newId = store.addMosaicRegion(targetClip.id, tLocal);
@@ -234,10 +280,28 @@ export function MosaicEditOverlay({ stageScale }: { stageScale: number }): JSX.E
       } else {
         useUIStore.getState().setSelectedMosaicRegionId(null);
       }
+      setDraft(null);
+      useUIStore.getState().setMosaicDraft(null);
+    };
+
+    // キャンセル(pointercancel/Escape): 新規領域を作成せずドラフトのみ破棄する。
+    const handleAbort = (): void => {
+      removeListeners();
+      setDraft(null);
+      useUIStore.getState().setMosaicDraft(null);
+    };
+
+    const handleKeyDown = (ev: KeyboardEvent): void => {
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        handleAbort();
+      }
     };
 
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handleAbort);
+    window.addEventListener("keydown", handleKeyDown);
   }
 
   // 描画データ: ドラッグ中の領域は draft を、それ以外は補間値を使う。

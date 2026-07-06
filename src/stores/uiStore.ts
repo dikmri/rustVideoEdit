@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 
+import type { MosaicSample } from "../lib/mosaic";
 import type { AssetKind } from "../types/model";
 
 export type Tool = "select" | "razor";
@@ -18,6 +19,20 @@ export interface DraggingAsset {
 
 export const MIN_PX_PER_SECOND = 10;
 export const MAX_PX_PER_SECOND = 400;
+
+/**
+ * モザイク領域のドラッグ中(移動/リサイズ/回転/新規作成)の一時ドラフト(§13.2)。
+ * projectStore への連打書き込み(undo 履歴汚染)を避けるため、確定前の値をここに保持し、
+ * PlaybackEngine のプレビュー描画だけをリアルタイムに追従させる。
+ * regionId が null の場合は新規作成ドラッグ中を表す(既存 region ではなく追加領域として描画)。
+ * pointerup での確定後、またはドラッグキャンセル(pointercancel/Escape)時に null へ戻す。
+ */
+export interface MosaicDraft {
+  clipId: string;
+  regionId: string | null;
+  blockSize: number;
+  sample: MosaicSample;
+}
 
 export interface UIState {
   /** 再生ヘッド位置(秒)。 */
@@ -56,6 +71,8 @@ export interface UIState {
   mosaicEditMode: boolean;
   /** 選択中のモザイク領域 ID(§13.2)。 */
   selectedMosaicRegionId: string | null;
+  /** モザイク領域ドラッグ中の一時ドラフト(§13.2)。ドラッグ中以外は null。 */
+  mosaicDraft: MosaicDraft | null;
 
   setPlayhead: (t: number) => void;
   setPlaying: (playing: boolean) => void;
@@ -78,6 +95,7 @@ export interface UIState {
   setSoundEnabled: (enabled: boolean) => void;
   setMosaicEditMode: (on: boolean) => void;
   setSelectedMosaicRegionId: (regionId: string | null) => void;
+  setMosaicDraft: (draft: MosaicDraft | null) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -100,6 +118,7 @@ export const useUIStore = create<UIState>()(
     soundEnabled: true,
     mosaicEditMode: false,
     selectedMosaicRegionId: null,
+    mosaicDraft: null,
 
     setPlayhead: (t) => set({ playhead: Math.max(0, t) }),
     setPlaying: (playing) => set({ playing }),
@@ -138,5 +157,6 @@ export const useUIStore = create<UIState>()(
     setSoundEnabled: (enabled) => set({ soundEnabled: enabled }),
     setMosaicEditMode: (on) => set(on ? { mosaicEditMode: true } : { mosaicEditMode: false }),
     setSelectedMosaicRegionId: (regionId) => set({ selectedMosaicRegionId: regionId }),
+    setMosaicDraft: (draft) => set({ mosaicDraft: draft }),
   })),
 );

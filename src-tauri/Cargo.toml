@@ -1,7 +1,7 @@
 [package]
 name = "rustvideoedit"
 version = "0.1.0"
-description = "rustVideoEdit"
+description = "SOBA Video Editor"
 authors = ["dikmri"]
 edition = "2021"
 
