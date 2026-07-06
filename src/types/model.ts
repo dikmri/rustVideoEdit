@@ -40,6 +40,25 @@ export interface TextStyle {
   background: string | null; // #RRGGBB or null
 }
 
+// モザイク(DESIGN.md §13.2)。video/image クリップのみ対象。
+// time はクリップローカル秒(0..duration)、cx/cy/w/h はソースピクセル座標(変形前)、rotation は度。
+export interface MosaicKeyframe {
+  time: number;
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+  rotation: number;
+  visible: boolean;
+}
+
+export interface MosaicRegion {
+  id: string;
+  enabled: boolean;
+  blockSize: number; // モザイク粒度(ソース px、4..80、既定 16)
+  keyframes: MosaicKeyframe[]; // time 昇順、常に 1 個以上
+}
+
 export interface Clip {
   id: string;
   assetId: string | null; // null = テキストクリップ(video トラックのみ)
@@ -55,6 +74,7 @@ export interface Clip {
   fadeOut: number;
   effects: Effect[];
   text: TextStyle | null; // テキストクリップのみ非 null
+  mosaics: MosaicRegion[]; // video/image クリップのみ使用(§13.2)。旧プロジェクトは [] で補完
 }
 
 export interface Track {
@@ -101,6 +121,7 @@ export interface VClip {
   assetW: number | null;
   assetH: number | null;
   isImage: boolean;
+  mosaics: MosaicRegion[]; // §13.2。Rust 側が enabled/空 keyframes をフィルタする
 }
 
 export interface AClip {

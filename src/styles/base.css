@@ -933,6 +933,66 @@ input[type="range"]::-moz-range-thumb {
   flex-shrink: 0;
 }
 
+/* モザイク編集オーバーレイ(§13.2)。色はトークン経由(ダークテーマ自動追従)。 */
+.mosaic-edit-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 100; /* PlaybackEngine のレイヤー(zIndex=トラック index)より前面 */
+  cursor: crosshair;
+}
+
+/* 線幅・破線はステージの CSS scale で縮むため、コンポーネントが svg の
+   --mosaic-sw(スクリーン 1px 相当のステージ px)を設定して補正する。 */
+.mosaic-region-rect {
+  fill: var(--accent-faint);
+  stroke: var(--accent-soft);
+  stroke-width: calc(var(--mosaic-sw, 1px) * 1.5);
+  cursor: move;
+  pointer-events: all;
+}
+
+.mosaic-region-rect-selected {
+  fill: var(--accent-tint);
+  stroke: var(--accent);
+}
+
+.mosaic-region-rect-disabled {
+  stroke-dasharray: calc(var(--mosaic-sw, 1px) * 4) calc(var(--mosaic-sw, 1px) * 3);
+}
+
+.mosaic-region-rect-creating {
+  fill: var(--accent-tint-strong);
+  stroke: var(--accent);
+  stroke-dasharray: calc(var(--mosaic-sw, 1px) * 4) calc(var(--mosaic-sw, 1px) * 3);
+  pointer-events: none;
+}
+
+.mosaic-region-hidden {
+  opacity: 0.4;
+}
+
+.mosaic-corner-handle {
+  fill: var(--panel);
+  stroke: var(--accent);
+  stroke-width: calc(var(--mosaic-sw, 1px) * 1.5);
+  cursor: nwse-resize;
+}
+
+.mosaic-rotate-handle {
+  fill: var(--panel);
+  stroke: var(--accent);
+  stroke-width: calc(var(--mosaic-sw, 1px) * 1.5);
+  cursor: grab;
+}
+
+.mosaic-rotate-line {
+  stroke: var(--accent);
+  stroke-width: var(--mosaic-sw, 1px);
+  pointer-events: none;
+}
+
 .transport-bar {
   flex: 0 0 auto;
   display: flex;
@@ -1158,4 +1218,62 @@ input[type="range"]::-moz-range-thumb {
   padding: 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
+}
+
+/* モザイクセクション(§13.2) */
+
+.mosaic-region-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.mosaic-region-item-selected {
+  border-color: var(--accent);
+}
+
+.mosaic-blocksize-value {
+  flex: 0 0 24px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-sub);
+  font-variant-numeric: tabular-nums;
+}
+
+.mosaic-kf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.mosaic-kf-item {
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.mosaic-kf-time {
+  flex: 1 1 auto;
+  height: 24px;
+  padding: 0 8px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mosaic-kf-time:hover {
+  background: var(--panel-deep);
+}
+
+.mosaic-shortcut-hint {
+  font-size: 11px;
 }
