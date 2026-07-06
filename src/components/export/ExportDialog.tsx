@@ -1,11 +1,13 @@
-// 書き出しダイアログ(DESIGN.md §5, §8, §9)。プリセット選択、詳細設定、保存先選択、
-// 書き出し実行(進捗/速度/キャンセル/完了/エラー)を担う。uiStore.exportDialogOpen で開閉する。
+// 書き出しダイアログ(DESIGN.md §5, §8, §9, §13.4, §13.5)。プリセット選択、詳細設定、保存先選択、
+// 書き出し実行(進捗/速度/キャンセル/完了/エラー)、完了音、「ソースに合わせる」プリセットを担う。
+// uiStore.exportDialogOpen で開閉する。
 import { save } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { IconWarning } from "../common/icons";
+import { playErrorTone, playSuccessChime } from "../../lib/chime";
 import { buildExportSpec } from "../../lib/exportSpec";
 import {
   cancelExport,
@@ -76,6 +78,17 @@ const PRESETS: Preset[] = [
 
 const FPS_OPTIONS = [24, 30, 60];
 
+/** アセットの codec 名に hevc/h265 を含めば hevc、それ以外は h264(§13.5)。 */
+function codecFromAsset(codec: string | null): VideoCodec {
+  if (!codec) return "h264";
+  const lower = codec.toLowerCase();
+  return lower.includes("hevc") || lower.includes("h265") || lower.includes("h.265") ? "hevc" : "h264";
+}
+
+function formatFps(fps: number): string {
+  return Number.isInteger(fps) ? String(fps) : fps.toFixed(2);
+}
+
 type ExportPhase = "idle" | "running" | "done" | "error";
 
 export function ExportDialog(): JSX.Element | null {
@@ -108,8 +121,24 @@ export function ExportDialog(): JSX.Element | null {
 
   useEffect(() => cleanupListeners, []);
 
+  // 「ソースに合わせる」(§13.5): 基準 = assets 配列で最初の video アセット(取込順で最初)。
+  const sourceAsset = project.assets.find((a) => a.kind === "video") ?? null;
+  const matchSourcePreset: Preset | null = sourceAsset
+    ? {
+        key: "matchSource",
+        labelKey: "export.preset.matchSource",
+        codec: codecFromAsset(sourceAsset.codec),
+        width: sourceAsset.width ?? project.settings.width,
+        height: sourceAsset.height ?? project.settings.height,
+        fps: sourceAsset.fps ?? (project.settings.fps || 30),
+        quality: 20,
+        audioBitrateKbps: 192,
+      }
+    : null;
+  const presets = matchSourcePreset ? [matchSourcePreset, ...PRESETS] : PRESETS;
+
   const matchedPresetKey =
-    PRESETS.find(
+    presets.find(
       (p) =>
         p.codec === codec &&
         (p.width === null ? width === project.settings.width : width === p.width) &&
@@ -120,7 +149,7 @@ export function ExportDialog(): JSX.Element | null {
     )?.key ?? "custom";
 
   function applyPreset(key: string): void {
-    const preset = PRESETS.find((p) => p.key === key);
+    const preset = presets.find((p) => p.key === key);
     if (!preset) return;
     setCodec(preset.codec);
     setWidth(preset.width ?? project.settings.width);
@@ -130,6 +159,15 @@ export function ExportDialog(): JSX.Element | null {
     setAudioBitrateKbps(preset.audioBitrateKbps);
     log.info("ui", `書き出しプリセット選択: ${key}`);
   }
+
+  // ダイアログを開いた時点で既定プリセットを適用する(§13.5:
+  // video アセットがあれば「ソースに合わせる」、無ければ従来通り YouTube 1080p)。
+  // open が false→true に変わったレンダリング後に走るため、その時点の assets を参照できる。
+  useEffect(() => {
+    if (!open) return;
+    applyPreset(matchSourcePreset ? "matchSource" : "youtube1080p");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   async function handleBrowse(): Promise<void> {
     const ext = codec === "prores" ? "mov" : "mp4";
@@ -174,6 +212,7 @@ export function ExportDialog(): JSX.Element | null {
         setPhase("done");
         setDoneOutputPath(e.outputPath);
         log.info("ui", `書き出し完了: ${e.outputPath}`);
+        if (useUIStore.getState().soundEnabled) playSuccessChime(); // §13.4
         cleanupListeners();
       });
       const offError = await onExportError((e) => {
@@ -181,6 +220,7 @@ export function ExportDialog(): JSX.Element | null {
         setPhase("error");
         setErrorMessage(e.message);
         log.error("ui", `書き出し失敗: ${e.message}`);
+        if (useUIStore.getState().soundEnabled) playErrorTone(); // §13.4
         cleanupListeners();
       });
       unlistenRefs.current = [offProgress, offDone, offError];
@@ -246,7 +286,7 @@ export function ExportDialog(): JSX.Element | null {
           <div className="properties-row">
             <label>{t("export.preset.label")}</label>
             <select value={matchedPresetKey} onChange={(e) => applyPreset(e.target.value)}>
-              {PRESETS.map((p) => (
+              {presets.map((p) => (
                 <option key={p.key} value={p.key}>
                   {t(p.labelKey)}
                 </option>
@@ -254,6 +294,17 @@ export function ExportDialog(): JSX.Element | null {
               <option value="custom">{t("export.preset.custom")}</option>
             </select>
           </div>
+
+          {matchSourcePreset && sourceAsset && matchedPresetKey === "matchSource" && (
+            <div className="text-sub" style={{ fontSize: 11, marginLeft: 96 }}>
+              {t("export.preset.matchSourceDesc", {
+                width: matchSourcePreset.width,
+                height: matchSourcePreset.height,
+                fps: formatFps(matchSourcePreset.fps ?? (project.settings.fps || 30)),
+                name: sourceAsset.name,
+              })}
+            </div>
+          )}
 
           <div className="properties-row">
             <label>{t("export.codec")}</label>
@@ -291,11 +342,14 @@ export function ExportDialog(): JSX.Element | null {
           <div className="properties-row">
             <label>{t("export.fps")}</label>
             <select value={fps} onChange={(e) => setFps(Number(e.target.value))}>
-              {FPS_OPTIONS.map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
-              ))}
+              {/* ソース由来の非整数 fps(例 29.97)も選択肢に含めて表示できるようにする(§13.5) */}
+              {(FPS_OPTIONS.includes(fps) ? FPS_OPTIONS : [...FPS_OPTIONS, fps].sort((a, b) => a - b)).map(
+                (f) => (
+                  <option key={f} value={f}>
+                    {formatFps(f)}
+                  </option>
+                ),
+              )}
             </select>
           </div>
           <div className="properties-row">

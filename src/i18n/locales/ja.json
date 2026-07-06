@@ -110,6 +110,8 @@
 
   "export.title": "書き出し",
   "export.preset.label": "プリセット",
+  "export.preset.matchSource": "ソースに合わせる",
+  "export.preset.matchSourceDesc": "{{width}}x{{height}} / {{fps}}fps(元: {{name}})",
   "export.preset.youtube1080p": "YouTube 1080p",
   "export.preset.uhd4k": "4K",
   "export.preset.hd720p": "HD 720p",
@@ -140,6 +142,12 @@
 
   "settingsDialog.title": "設定",
   "settingsDialog.language": "言語",
+  "settingsDialog.theme": "テーマ",
+  "settingsDialog.themeSystem": "システム",
+  "settingsDialog.themeLight": "ライト",
+  "settingsDialog.themeDark": "ダーク",
+  "settingsDialog.soundEnabled": "書き出し完了音",
+  "settingsDialog.soundPreview": "試聴",
 
   "aboutDialog.title": "rustVideoEdit について",
   "aboutDialog.version": "バージョン",

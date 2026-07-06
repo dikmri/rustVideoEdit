@@ -110,6 +110,8 @@
 
   "export.title": "导出",
   "export.preset.label": "预设",
+  "export.preset.matchSource": "匹配源素材",
+  "export.preset.matchSourceDesc": "{{width}}x{{height}} / {{fps}}fps(源:{{name}})",
   "export.preset.youtube1080p": "YouTube 1080p",
   "export.preset.uhd4k": "4K",
   "export.preset.hd720p": "HD 720p",
@@ -140,6 +142,12 @@
 
   "settingsDialog.title": "设置",
   "settingsDialog.language": "语言",
+  "settingsDialog.theme": "主题",
+  "settingsDialog.themeSystem": "跟随系统",
+  "settingsDialog.themeLight": "浅色",
+  "settingsDialog.themeDark": "深色",
+  "settingsDialog.soundEnabled": "导出完成提示音",
+  "settingsDialog.soundPreview": "试听",
 
   "aboutDialog.title": "关于 rustVideoEdit",
   "aboutDialog.version": "版本",

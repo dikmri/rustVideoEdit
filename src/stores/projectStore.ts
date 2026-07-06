@@ -32,6 +32,18 @@ function createDefaultProject(): Project {
   };
 }
 
+/**
+ * 旧バージョンの .rvep で欠落しているフィールドを既定値で補完する(§13.5)。
+ * v0.2.0 で MediaAsset に追加された bitrateKbps が無い場合は null を入れる。
+ */
+function normalizeProject(project: Project): Project {
+  project.assets = project.assets.map((asset) => ({
+    ...asset,
+    bitrateKbps: (asset as Partial<MediaAsset>).bitrateKbps ?? null,
+  }));
+  return project;
+}
+
 function findTrackById(project: Project, trackId: string): Track | null {
   return (
     project.videoTracks.find((t) => t.id === trackId) ??
@@ -201,7 +213,7 @@ export const useProjectStore = create<ProjectState>()(
         project: createDefaultProject(),
 
         newProject: () => set({ project: createDefaultProject() }),
-        loadProject: (project) => set({ project: structuredClone(project) }),
+        loadProject: (project) => set({ project: normalizeProject(structuredClone(project)) }),
 
         setProjectName: (name) =>
           mutate((project) => {

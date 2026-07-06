@@ -15,6 +15,7 @@ export interface MediaAsset {
   hasAudio: boolean;
   codec: string | null;
   thumbnail: string | null; // キャッシュ画像の絶対パス
+  bitrateKbps: number | null; // format.bit_rate/1000(§13.5)。取得不可・旧プロジェクトは null
 }
 
 export interface ClipTransform {

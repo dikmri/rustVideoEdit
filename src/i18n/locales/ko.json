@@ -110,6 +110,8 @@
 
   "export.title": "내보내기",
   "export.preset.label": "프리셋",
+  "export.preset.matchSource": "소스에 맞추기",
+  "export.preset.matchSourceDesc": "{{width}}x{{height}} / {{fps}}fps (원본: {{name}})",
   "export.preset.youtube1080p": "YouTube 1080p",
   "export.preset.uhd4k": "4K",
   "export.preset.hd720p": "HD 720p",
@@ -140,6 +142,12 @@
 
   "settingsDialog.title": "설정",
   "settingsDialog.language": "언어",
+  "settingsDialog.theme": "테마",
+  "settingsDialog.themeSystem": "시스템",
+  "settingsDialog.themeLight": "라이트",
+  "settingsDialog.themeDark": "다크",
+  "settingsDialog.soundEnabled": "내보내기 완료음",
+  "settingsDialog.soundPreview": "미리 듣기",
 
   "aboutDialog.title": "rustVideoEdit 정보",
   "aboutDialog.version": "버전",

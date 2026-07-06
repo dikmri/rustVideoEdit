@@ -1,5 +1,6 @@
-// メディアビン(DESIGN.md §9)。ファイルダイアログ + OS D&D による取込、
-// グリッド表示、右クリック削除、Timeline へのポインタドラッグ開始を担う。
+// メディアビン(DESIGN.md §9, §13.3)。ファイルダイアログ + OS D&D による取込、
+// グリッド表示、右クリック削除、Timeline へのポインタドラッグ開始、
+// video アセットのホバースクラブプレビュー(共有 <video muted> 1 要素)を担う。
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -46,6 +47,116 @@ export function MediaBin(): JSX.Element {
   const importErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
+  // --- ホバープレビュー(§13.3)。ビン全体で <video muted> を 1 つだけ使い回す(デコーダ節約)。 ---
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
+  const hoverStateRef = useRef<{ assetId: string; failed: boolean } | null>(null);
+  const pendingRatioRef = useRef<number | null>(null);
+
+  function ensurePreviewVideo(): HTMLVideoElement {
+    let video = previewVideoRef.current;
+    if (!video) {
+      video = document.createElement("video");
+      video.muted = true; // 音は出さない(§13.3)
+      video.preload = "auto";
+      video.className = "mediabin-hover-video";
+      video.addEventListener("error", () => {
+        const st = hoverStateRef.current;
+        if (!st || st.failed) return;
+        st.failed = true;
+        // エラー時は video を外してサムネイル表示を維持する(§13.3)。
+        const v = previewVideoRef.current;
+        if (v) {
+          v.pause();
+          v.remove();
+        }
+        log.warn("ui", `ホバープレビュー再生不可(サムネイル維持): assetId=${st.assetId}`);
+      });
+      video.addEventListener("loadedmetadata", () => {
+        // メタデータ読込前に受けたスクラブ位置を反映する。
+        const v = previewVideoRef.current;
+        const ratio = pendingRatioRef.current;
+        if (v && v.isConnected && ratio !== null && Number.isFinite(v.duration) && v.duration > 0) {
+          v.currentTime = ratio * v.duration;
+        }
+        pendingRatioRef.current = null;
+      });
+      previewVideoRef.current = video;
+    }
+    return video;
+  }
+
+  function stopHoverPreview(): void {
+    hoverStateRef.current = null;
+    pendingRatioRef.current = null;
+    const video = previewVideoRef.current;
+    if (!video) return;
+    video.pause();
+    video.remove();
+    // src を解放してファイルハンドル/デコーダを手放す。
+    video.removeAttribute("src");
+    video.load();
+  }
+
+  function handleItemPointerEnter(e: ReactPointerEvent<HTMLDivElement>, asset: MediaAsset): void {
+    if (asset.kind !== "video") return;
+    // Timeline へのドラッグ中はプレビューしない。
+    if (useUIStore.getState().draggingAsset) return;
+    const thumb = e.currentTarget.querySelector<HTMLDivElement>(".mediabin-thumb");
+    if (!thumb) return;
+    const video = ensurePreviewVideo();
+    hoverStateRef.current = { assetId: asset.id, failed: false };
+    pendingRatioRef.current = null;
+    try {
+      video.src = convertFileSrc(asset.path);
+    } catch (err) {
+      hoverStateRef.current = null;
+      log.error("ui", `ホバープレビューの src 設定に失敗しました: ${String(err)}`);
+      return;
+    }
+    thumb.appendChild(video);
+    log.info("ui", `ホバープレビュー開始: assetId=${asset.id}`);
+  }
+
+  function handleItemPointerMove(e: ReactPointerEvent<HTMLDivElement>, asset: MediaAsset): void {
+    const st = hoverStateRef.current;
+    if (!st || st.assetId !== asset.id || st.failed) return;
+    const video = previewVideoRef.current;
+    if (!video || !video.isConnected) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    // タイル内の X 位置 → 再生位置(§13.3: currentTime = ratio * duration)。
+    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const duration =
+      Number.isFinite(video.duration) && video.duration > 0 ? video.duration : asset.duration;
+    if (duration <= 0) return;
+    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      // 末尾ぴったりだと最終フレームが出ないことがあるためわずかに手前へ。
+      video.currentTime = Math.min(ratio * duration, Math.max(0, duration - 0.05));
+    } else {
+      pendingRatioRef.current = ratio;
+    }
+  }
+
+  function handleItemPointerLeave(asset: MediaAsset): void {
+    const st = hoverStateRef.current;
+    if (!st || st.assetId !== asset.id) return;
+    stopHoverPreview();
+  }
+
+  useEffect(() => {
+    // アンマウント時に共有 video を破棄する(リーク防止)。
+    return () => {
+      const video = previewVideoRef.current;
+      if (video) {
+        video.pause();
+        video.remove();
+        video.removeAttribute("src");
+      }
+      previewVideoRef.current = null;
+      hoverStateRef.current = null;
+    };
+  }, []);
+
   function showImportError(message: string): void {
     setImportError(message);
     if (importErrorTimer.current) clearTimeout(importErrorTimer.current);
@@ -72,7 +183,8 @@ export function MediaBin(): JSX.Element {
             log.error("ui", `サムネイル生成に失敗しました: path=${path} err=${String(err)}`);
           }
         }
-        const asset: MediaAsset = { ...probed, thumbnail };
+        // bitrateKbps は §13.5 で追加されたフィールド。念のため欠落時は null 補完する。
+        const asset: MediaAsset = { ...probed, thumbnail, bitrateKbps: probed.bitrateKbps ?? null };
         useProjectStore.getState().addAsset(asset);
         log.info("ui", `アセット追加: id=${asset.id} name=${asset.name} kind=${asset.kind}`);
       } catch (err) {
@@ -219,6 +331,9 @@ export function MediaBin(): JSX.Element {
               key={asset.id}
               className={`mediabin-item${selectedAssetId === asset.id ? " mediabin-item-selected" : ""}`}
               onPointerDown={(e) => handleItemPointerDown(e, asset)}
+              onPointerEnter={(e) => handleItemPointerEnter(e, asset)}
+              onPointerMove={(e) => handleItemPointerMove(e, asset)}
+              onPointerLeave={() => handleItemPointerLeave(asset)}
               onContextMenu={(e) => {
                 e.preventDefault();
                 setContextMenu({ assetId: asset.id, x: e.clientX, y: e.clientY });
