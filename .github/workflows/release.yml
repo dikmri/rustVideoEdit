@@ -54,7 +54,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
-          releaseName: "rustVideoEdit v__VERSION__"
+          releaseName: "SOBA Video Editor v__VERSION__"
           releaseBody: "各プラットフォーム向けインストーラは Assets を参照してください。インストール済みのアプリは自動更新されます。"
           releaseDraft: false
           prerelease: false

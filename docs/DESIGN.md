@@ -1,5 +1,7 @@
 # rustVideoEdit 設計書
 
+> **P7 改名注記**: v0.3.0 でアプリ名を「SOBA Video Editor」へ改名した(本書内の `rustVideoEdit` 表記は改名前の履歴として残す)。アプリ識別子 `com.dikmri.rustvideoedit`・Rust crate 名 `rustvideoedit`・GitHub リポジトリ名 `dikmri/rustVideoEdit` は自動更新の互換性維持のため不変。
+
 Premiere Pro のコア機能(クラウド以外)を再現する、Rust製クロスプラットフォーム動画編集ソフト。
 軽量・高速・ネイティブ並パフォーマンス。UI/UX は無印良品風(シンプル・余白・生成り色)。
 

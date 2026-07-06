@@ -10,6 +10,16 @@ import type { Clip, Effect, Project, Track } from "../../types/model";
 import { sampleRegion } from "../mosaic";
 import { log } from "../logger";
 
+/** モザイクの実描画対象(領域 1 件分)。 */
+interface ActiveMosaicRegion {
+  blockSize: number;
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+  rotation: number;
+}
+
 /** currentTime 補正の閾値(秒)。 */
 const SYNC_THRESHOLD_SEC = 0.12;
 
@@ -106,6 +116,17 @@ export class PlaybackEngine {
       useUIStore.subscribe(
         (s) => s.playhead,
         (playhead) => this.onPlayheadChange(playhead),
+      ),
+    );
+    // モザイク編集ドラッグ中の一時ドラフト(§13.2)。再生中は rAF の tick が毎フレーム
+    // renderFrame を呼ぶため不要(むしろ二重描画になる)。一時停止中のみ、ドラフトの変化
+    // (pointermove ごと)に合わせて現在フレームを再描画し、ドラッグ中も実プレビューさせる。
+    this.unsubs.push(
+      useUIStore.subscribe(
+        (s) => s.mosaicDraft,
+        () => {
+          if (!useUIStore.getState().playing) this.renderFrame(this.lastRenderedPlayhead);
+        },
       ),
     );
 
@@ -441,6 +462,36 @@ export class PlaybackEngine {
   }
 
   /**
+   * 描画対象クリップの実効モザイク領域一覧を返す(DESIGN §13.2)。
+   * mosaicDraft(§13.2、MosaicEditOverlay がドラッグ中に書き込む一時ドラフト)が
+   * この clip を指している場合、確定前の値をここで上書き/追加する:
+   * - regionId が既存 region と一致 → その region の sample・blockSize をドラフトで上書き
+   *   (visible もドラフト値。enabled による除外は既存領域と同様に適用する)
+   * - regionId が null → 新規作成ドラッグ中のドラフト矩形を追加領域として描画する
+   */
+  private computeActiveMosaicRegions(clip: Clip, localT: number): ActiveMosaicRegion[] {
+    const draft = useUIStore.getState().mosaicDraft;
+    const draftForClip = draft && draft.clipId === clip.id ? draft : null;
+
+    const active: ActiveMosaicRegion[] = [];
+    for (const region of clip.mosaics) {
+      if (!region.enabled) continue;
+      const isOverridden = draftForClip !== null && draftForClip.regionId === region.id;
+      const s = isOverridden ? draftForClip!.sample : sampleRegion(region, localT);
+      const blockSize = isOverridden ? draftForClip!.blockSize : region.blockSize;
+      if (!s || !s.visible || s.w <= 0 || s.h <= 0) continue;
+      active.push({ blockSize, cx: s.cx, cy: s.cy, w: s.w, h: s.h, rotation: s.rotation });
+    }
+    if (draftForClip && draftForClip.regionId === null) {
+      const s = draftForClip.sample;
+      if (s.visible && s.w > 0 && s.h > 0) {
+        active.push({ blockSize: draftForClip.blockSize, cx: s.cx, cy: s.cy, w: s.w, h: s.h, rotation: s.rotation });
+      }
+    }
+    return active;
+  }
+
+  /**
    * モザイク領域を canvas に描画する(DESIGN §13.2 のプレビュー方式)。
    * (1) blockSize ごとにフレーム全体を 1/blockSize でオフスクリーンへ縮小描画し、
    * (2) メイン canvas で回転矩形パスに clip して imageSmoothingEnabled=false で拡大描画する。
@@ -453,13 +504,7 @@ export class PlaybackEngine {
     h: number,
     localT: number,
   ): void {
-    const active: Array<{ blockSize: number; cx: number; cy: number; w: number; h: number; rotation: number }> = [];
-    for (const region of clip.mosaics) {
-      if (!region.enabled) continue;
-      const s = sampleRegion(region, localT);
-      if (!s || !s.visible || s.w <= 0 || s.h <= 0) continue;
-      active.push({ blockSize: region.blockSize, cx: s.cx, cy: s.cy, w: s.w, h: s.h, rotation: s.rotation });
-    }
+    const active = this.computeActiveMosaicRegions(clip, localT);
     if (active.length === 0) {
       this.hideMosaic(layer);
       return;

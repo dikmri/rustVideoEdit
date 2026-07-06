@@ -5,7 +5,7 @@
   "common.delete": "Eliminar",
   "common.none": "Ninguno",
 
-  "app.name": "rustVideoEdit",
+  "app.name": "SOBA Video Editor",
 
   "header.new": "Nuevo",
   "header.open": "Abrir",
@@ -20,7 +20,7 @@
   "header.confirmDiscardMessage": "Hay cambios sin guardar. Si continúa, se perderán.",
   "header.saveDialogTitle": "Guardar proyecto",
   "header.openDialogTitle": "Abrir proyecto",
-  "header.projectFileFilterName": "Proyecto de rustVideoEdit",
+  "header.projectFileFilterName": "Proyecto de SOBA Video Editor",
   "header.ffmpegMissing": "No se encontró ffmpeg/ffprobe. La importación y exportación no están disponibles.",
   "header.saveFailed": "No se pudo guardar el proyecto",
   "header.loadFailed": "No se pudo cargar el proyecto",
@@ -162,7 +162,7 @@
   "settingsDialog.soundEnabled": "Sonido al completar la exportación",
   "settingsDialog.soundPreview": "Escuchar",
 
-  "aboutDialog.title": "Acerca de rustVideoEdit",
+  "aboutDialog.title": "Acerca de SOBA Video Editor",
   "aboutDialog.version": "Versión",
   "aboutDialog.description": "Un editor de video multiplataforma construido con Rust.",
 

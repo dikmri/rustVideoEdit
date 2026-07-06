@@ -1,6 +1,6 @@
 //! ログ初期化(DESIGN.md §6)+ `log_event` コマンド。
 //!
-//! ファイル: `runtime/logs/rustVideoEdit-YYYY-MM-DD.log`(daily rolling)。
+//! ファイル: `runtime/logs/SOBAVideoEditor-YYYY-MM-DD.log`(daily rolling)。
 //! 形式: `2026-07-05T12:34:56.789+09:00 LEVEL [target] message`
 
 use std::fmt;
@@ -65,7 +65,7 @@ pub fn init() -> (WorkerGuard, PathBuf) {
 
     let file_appender = tracing_appender::rolling::Builder::new()
         .rotation(tracing_appender::rolling::Rotation::DAILY)
-        .filename_prefix("rustVideoEdit")
+        .filename_prefix("SOBAVideoEditor")
         .filename_suffix("log")
         .build(&logs_dir)
         .expect("ログファイルの初期化に失敗しました");
@@ -98,10 +98,10 @@ pub fn init() -> (WorkerGuard, PathBuf) {
         .init();
 
     // tracing-appender の Builder は prefix/suffix の間に "." を挟むため、実際のファイル名は
-    // "rustVideoEdit.YYYY-MM-DD.log" になる(DESIGN.md の記載はハイフン区切りだが、
+    // "SOBAVideoEditor.YYYY-MM-DD.log" になる(DESIGN.md の記載はハイフン区切りだが、
     // ライブラリの制約によりドット区切りとしている。ログ仕様としての実質は同一)。
     let today = chrono::Local::now().format("%Y-%m-%d");
-    let log_path = logs_dir.join(format!("rustVideoEdit.{today}.log"));
+    let log_path = logs_dir.join(format!("SOBAVideoEditor.{today}.log"));
 
     (guard, log_path)
 }

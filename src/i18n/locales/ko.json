@@ -5,7 +5,7 @@
   "common.delete": "삭제",
   "common.none": "없음",
 
-  "app.name": "rustVideoEdit",
+  "app.name": "SOBA Video Editor",
 
   "header.new": "새로 만들기",
   "header.open": "열기",
@@ -20,7 +20,7 @@
   "header.confirmDiscardMessage": "저장되지 않은 변경 사항이 있습니다. 계속하면 변경 사항이 사라집니다.",
   "header.saveDialogTitle": "프로젝트 저장",
   "header.openDialogTitle": "프로젝트 열기",
-  "header.projectFileFilterName": "rustVideoEdit 프로젝트",
+  "header.projectFileFilterName": "SOBA Video Editor 프로젝트",
   "header.ffmpegMissing": "ffmpeg/ffprobe를 찾을 수 없습니다. 가져오기 및 내보내기를 사용할 수 없습니다.",
   "header.saveFailed": "프로젝트 저장에 실패했습니다",
   "header.loadFailed": "프로젝트 불러오기에 실패했습니다",
@@ -162,7 +162,7 @@
   "settingsDialog.soundEnabled": "내보내기 완료음",
   "settingsDialog.soundPreview": "미리 듣기",
 
-  "aboutDialog.title": "rustVideoEdit 정보",
+  "aboutDialog.title": "SOBA Video Editor 정보",
   "aboutDialog.version": "버전",
   "aboutDialog.description": "Rust로 만든 크로스 플랫폼 동영상 편집 소프트웨어입니다.",
 

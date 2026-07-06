@@ -4,7 +4,7 @@
 //! `runtime_dir()` 配下に置く。
 //! - デバッグビルド: `CARGO_MANIFEST_DIR` の親(=リポジトリ root)/runtime
 //! - リリースビルド: 実行ファイルと同じディレクトリの runtime
-//!   (作成失敗時のみ `dirs::data_local_dir()/rustVideoEdit` にフォールバック)
+//!   (作成失敗時のみ `dirs::data_local_dir()/SOBAVideoEditor` にフォールバック)
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -42,7 +42,7 @@ fn resolve_runtime_dir() -> PathBuf {
         // フォールバック: OS 共通領域(作成失敗時のみ)。
         let fallback = dirs::data_local_dir()
             .unwrap_or_else(std::env::temp_dir)
-            .join("rustVideoEdit");
+            .join("SOBAVideoEditor");
         let _ = std::fs::create_dir_all(&fallback);
         fallback
     }

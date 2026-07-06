@@ -5,7 +5,7 @@
   "common.delete": "删除",
   "common.none": "无",
 
-  "app.name": "rustVideoEdit",
+  "app.name": "SOBA Video Editor",
 
   "header.new": "新建",
   "header.open": "打开",
@@ -20,7 +20,7 @@
   "header.confirmDiscardMessage": "有未保存的更改。继续操作将丢失这些更改。",
   "header.saveDialogTitle": "保存项目",
   "header.openDialogTitle": "打开项目",
-  "header.projectFileFilterName": "rustVideoEdit 项目",
+  "header.projectFileFilterName": "SOBA Video Editor 项目",
   "header.ffmpegMissing": "未找到 ffmpeg/ffprobe。无法导入或导出。",
   "header.saveFailed": "项目保存失败",
   "header.loadFailed": "项目加载失败",
@@ -162,7 +162,7 @@
   "settingsDialog.soundEnabled": "导出完成提示音",
   "settingsDialog.soundPreview": "试听",
 
-  "aboutDialog.title": "关于 rustVideoEdit",
+  "aboutDialog.title": "关于 SOBA Video Editor",
   "aboutDialog.version": "版本",
   "aboutDialog.description": "使用 Rust 构建的跨平台视频编辑软件。",
 

@@ -1,7 +1,9 @@
-# rustVideoEdit
+# SOBA Video Editor
 
 Rust(Tauri 2)製の軽量・高速なクロスプラットフォーム動画編集ソフト。
 無印良品のようなシンプルで美しい UI を目指しています。
+
+(旧名: rustVideoEdit)
 
 ![CI](https://github.com/dikmri/rustVideoEdit/actions/workflows/ci.yml/badge.svg)
 
