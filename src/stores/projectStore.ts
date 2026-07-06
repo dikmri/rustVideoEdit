@@ -4,8 +4,15 @@ import { create } from "zustand";
 import { useStore } from "zustand";
 import { temporal } from "zundo";
 
-import type { Clip, MediaAsset, Project, ProjectSettings, Track } from "../types/model";
+import type { Clip, MediaAsset, MosaicKeyframe, MosaicRegion, Project, ProjectSettings, Track } from "../types/model";
 import { log } from "../lib/logger";
+import {
+  MOSAIC_BLOCK_SIZE_DEFAULT,
+  MOSAIC_BLOCK_SIZE_MAX,
+  MOSAIC_BLOCK_SIZE_MIN,
+  sameTimeTolerance,
+  upsertKeyframe,
+} from "../lib/mosaic";
 import { useUIStore } from "./uiStore";
 
 /** 動画/画像/テキストクリップの最小長(秒)。 */
@@ -33,15 +40,27 @@ function createDefaultProject(): Project {
 }
 
 /**
- * 旧バージョンの .rvep で欠落しているフィールドを既定値で補完する(§13.5)。
- * v0.2.0 で MediaAsset に追加された bitrateKbps が無い場合は null を入れる。
+ * 旧バージョンの .rvep で欠落しているフィールドを既定値で補完する(§13.2, §13.5)。
+ * v0.2.0 で MediaAsset に追加された bitrateKbps が無い場合は null を、
+ * Clip に追加された mosaics が無い場合は [] を入れる。
  */
 function normalizeProject(project: Project): Project {
   project.assets = project.assets.map((asset) => ({
     ...asset,
     bitrateKbps: (asset as Partial<MediaAsset>).bitrateKbps ?? null,
   }));
+  for (const track of [...project.videoTracks, ...project.audioTracks]) {
+    track.clips = track.clips.map((clip) => ({
+      ...clip,
+      mosaics: (clip as Partial<Clip>).mosaics ?? [],
+    }));
+  }
   return project;
+}
+
+/** MosaicRegion[] のディープコピー(splitClip の複製用)。 */
+function cloneMosaics(mosaics: MosaicRegion[]): MosaicRegion[] {
+  return mosaics.map((r) => ({ ...r, keyframes: r.keyframes.map((k) => ({ ...k })) }));
 }
 
 function findTrackById(project: Project, trackId: string): Track | null {
@@ -192,6 +211,18 @@ export interface ProjectState {
   rippleDelete: (clipId: string) => void;
   updateClip: (clipId: string, partial: Partial<Clip>) => void;
 
+  /** モザイク領域を追加し、新規領域の id を返す(§13.2)。time はクリップローカル秒。 */
+  addMosaicRegion: (clipId: string, time: number) => string | null;
+  removeMosaicRegion: (clipId: string, regionId: string) => void;
+  setMosaicRegionProps: (
+    clipId: string,
+    regionId: string,
+    props: Partial<Pick<MosaicRegion, "enabled" | "blockSize">>,
+  ) => void;
+  /** キーフレームを挿入/更新する(±半フレーム以内の既存キーフレームがあれば更新)。 */
+  upsertMosaicKeyframe: (clipId: string, regionId: string, kf: MosaicKeyframe) => void;
+  removeMosaicKeyframe: (clipId: string, regionId: string, index: number) => void;
+
   getClipById: (clipId: string) => Clip | null;
   getTrackOfClip: (clipId: string) => Track | null;
   getTimelineDuration: () => number;
@@ -320,6 +351,7 @@ export const useProjectStore = create<ProjectState>()(
               fadeOut: 0,
               effects: [],
               text: null,
+              mosaics: [],
             };
             insertClipSorted(track.clips, clip);
             newId = id;
@@ -360,6 +392,7 @@ export const useProjectStore = create<ProjectState>()(
                 align: "center",
                 background: null,
               },
+              mosaics: [],
             };
             insertClipSorted(track.clips, clip);
             newId = id;
@@ -446,7 +479,11 @@ export const useProjectStore = create<ProjectState>()(
               transform: { ...clip.transform },
               effects: clip.effects.map((e) => ({ ...e })),
               text: clip.text ? { ...clip.text } : null,
+              mosaics: cloneMosaics(clip.mosaics),
             };
+            // 右側クリップ: キーフレーム time はクリップローカル秒(§13.2)のため
+            // -leftDuration シフトする。time<0 になったものもホールド動作が保たれるよう
+            // そのまま残す(sampleRegion は先頭より前をホールドするので挙動は同じ)。
             const rightClip: Clip = {
               ...clip,
               id: crypto.randomUUID(),
@@ -457,6 +494,10 @@ export const useProjectStore = create<ProjectState>()(
               transform: { ...clip.transform },
               effects: clip.effects.map((e) => ({ ...e })),
               text: clip.text ? { ...clip.text } : null,
+              mosaics: cloneMosaics(clip.mosaics).map((r) => ({
+                ...r,
+                keyframes: r.keyframes.map((k) => ({ ...k, time: k.time - leftDuration })),
+              })),
             };
 
             track.clips.splice(index, 1, leftClip, rightClip);
@@ -524,6 +565,118 @@ export const useProjectStore = create<ProjectState>()(
             }
 
             track.clips[index] = merged;
+            return true;
+          }),
+
+        addMosaicRegion: (clipId, time) => {
+          let newId: string | null = null;
+          mutate((project) => {
+            const loc = findClipLocation(project, clipId);
+            if (!loc) return false;
+            const { clip } = loc;
+            // 対象は video/image クリップのみ(§13.2)。
+            if (clip.assetId === null) return false;
+            const asset = findAssetById(project, clip.assetId);
+            if (!asset || asset.kind === "audio") return false;
+
+            // 既定領域: ソース中央、ソース幅/高さの 1/4(アセット解像度が不明ならプロジェクト解像度)。
+            const w = asset.width ?? project.settings.width;
+            const h = asset.height ?? project.settings.height;
+            const id = crypto.randomUUID();
+            const region: MosaicRegion = {
+              id,
+              enabled: true,
+              blockSize: MOSAIC_BLOCK_SIZE_DEFAULT,
+              keyframes: [
+                {
+                  time: Math.max(0, time),
+                  cx: w / 2,
+                  cy: h / 2,
+                  w: w / 4,
+                  h: h / 4,
+                  rotation: 0,
+                  visible: true,
+                },
+              ],
+            };
+            clip.mosaics.push(region);
+            newId = id;
+            return true;
+          });
+          if (newId) log.info("ui", `モザイク領域追加: clipId=${clipId} regionId=${newId} time=${time.toFixed(3)}`);
+          return newId;
+        },
+
+        removeMosaicRegion: (clipId, regionId) =>
+          mutate((project) => {
+            const loc = findClipLocation(project, clipId);
+            if (!loc) return false;
+            const before = loc.clip.mosaics.length;
+            loc.clip.mosaics = loc.clip.mosaics.filter((r) => r.id !== regionId);
+            if (loc.clip.mosaics.length === before) return false;
+            log.info("ui", `モザイク領域削除: clipId=${clipId} regionId=${regionId}`);
+            return true;
+          }),
+
+        setMosaicRegionProps: (clipId, regionId, props) =>
+          mutate((project) => {
+            const loc = findClipLocation(project, clipId);
+            if (!loc) return false;
+            const region = loc.clip.mosaics.find((r) => r.id === regionId);
+            if (!region) return false;
+            let changed = false;
+            if (props.enabled !== undefined && props.enabled !== region.enabled) {
+              region.enabled = props.enabled;
+              changed = true;
+            }
+            if (props.blockSize !== undefined) {
+              const bs = Math.min(MOSAIC_BLOCK_SIZE_MAX, Math.max(MOSAIC_BLOCK_SIZE_MIN, Math.round(props.blockSize)));
+              if (bs !== region.blockSize) {
+                region.blockSize = bs;
+                changed = true;
+              }
+            }
+            if (changed) {
+              log.info(
+                "ui",
+                `モザイク領域変更: clipId=${clipId} regionId=${regionId} enabled=${region.enabled} blockSize=${region.blockSize}`,
+              );
+            }
+            return changed;
+          }),
+
+        upsertMosaicKeyframe: (clipId, regionId, kf) =>
+          mutate((project) => {
+            const loc = findClipLocation(project, clipId);
+            if (!loc) return false;
+            const region = loc.clip.mosaics.find((r) => r.id === regionId);
+            if (!region) return false;
+            const tolerance = sameTimeTolerance(project.settings.fps);
+            region.keyframes = upsertKeyframe(region.keyframes, kf, tolerance);
+            log.info(
+              "ui",
+              `モザイクキーフレーム記録: clipId=${clipId} regionId=${regionId} time=${kf.time.toFixed(3)} ` +
+                `cx=${kf.cx.toFixed(1)} cy=${kf.cy.toFixed(1)} w=${kf.w.toFixed(1)} h=${kf.h.toFixed(1)} ` +
+                `rot=${kf.rotation.toFixed(1)} visible=${kf.visible}`,
+            );
+            return true;
+          }),
+
+        removeMosaicKeyframe: (clipId, regionId, index) =>
+          mutate((project) => {
+            const loc = findClipLocation(project, clipId);
+            if (!loc) return false;
+            const region = loc.clip.mosaics.find((r) => r.id === regionId);
+            if (!region) return false;
+            if (index < 0 || index >= region.keyframes.length) return false;
+            // キーフレームは常に 1 個以上を維持する(§13.2)。
+            if (region.keyframes.length <= 1) return false;
+            const removed = region.keyframes[index];
+            region.keyframes = region.keyframes.filter((_, i) => i !== index);
+            log.info(
+              "ui",
+              `モザイクキーフレーム削除: clipId=${clipId} regionId=${regionId} time=${removed.time.toFixed(3)}`,
+            );
             return true;
           }),
 

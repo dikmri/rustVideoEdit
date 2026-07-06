@@ -7,6 +7,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { useProjectStore } from "../../stores/projectStore";
 import { useUIStore } from "../../stores/uiStore";
 import type { Clip, Effect, Project, Track } from "../../types/model";
+import { sampleRegion } from "../mosaic";
 import { log } from "../logger";
 
 /** currentTime 補正の閾値(秒)。 */
@@ -16,6 +17,10 @@ interface VideoLayer {
   wrapper: HTMLDivElement;
   video: HTMLVideoElement;
   img: HTMLImageElement;
+  /** モザイク描画用 canvas(§13.2)。<video>/<img> の直上に同サイズで重ねる。 */
+  mosaicCanvas: HTMLCanvasElement;
+  /** blockSize ごとの縮小用オフスクリーン canvas(使い回し)。 */
+  mosaicScaled: Map<number, HTMLCanvasElement>;
   textDiv: HTMLDivElement;
   unsupportedDiv: HTMLDivElement;
   currentSrcPath: string | null;
@@ -239,6 +244,15 @@ export class PlaybackEngine {
     const img = document.createElement("img");
     img.style.display = "none";
 
+    // モザイク canvas(§13.2)。wrapper 内で <video>/<img> の直上に同サイズで重ねるため、
+    // CSS transform(scale/rotate)や opacity/filter は wrapper 経由で自動的に共通適用される。
+    const mosaicCanvas = document.createElement("canvas");
+    mosaicCanvas.style.position = "absolute";
+    mosaicCanvas.style.left = "0";
+    mosaicCanvas.style.top = "0";
+    mosaicCanvas.style.pointerEvents = "none";
+    mosaicCanvas.style.display = "none";
+
     const textDiv = document.createElement("div");
     textDiv.style.display = "none";
     textDiv.style.whiteSpace = "pre-wrap";
@@ -254,10 +268,38 @@ export class PlaybackEngine {
 
     wrapper.appendChild(video);
     wrapper.appendChild(img);
+    wrapper.appendChild(mosaicCanvas);
     wrapper.appendChild(textDiv);
     wrapper.appendChild(unsupportedDiv);
 
-    return { wrapper, video, img, textDiv, unsupportedDiv, currentSrcPath: null, currentClipId: null };
+    const layer: VideoLayer = {
+      wrapper,
+      video,
+      img,
+      mosaicCanvas,
+      mosaicScaled: new Map(),
+      textDiv,
+      unsupportedDiv,
+      currentSrcPath: null,
+      currentClipId: null,
+    };
+
+    // 一時停止中のシーク: currentTime 補正の完了(seeked)後にフレーム内容が変わるため、
+    // その時点のフレームでモザイクを描き直す(古いフレームのモザイクが残る/消える不整合の防止)。
+    video.addEventListener("seeked", () => {
+      if (!useUIStore.getState().playing) this.redrawMosaicForLayer(layer);
+    });
+    // src 差し替え直後(currentTime 補正が閾値未満で seeked が来ないケース)にも描けるよう
+    // 最初のフレームが利用可能になった時点でも描き直す。
+    video.addEventListener("loadeddata", () => {
+      if (!useUIStore.getState().playing) this.redrawMosaicForLayer(layer);
+    });
+    // 画像の読込完了時も同様に描き直す(読込前は drawImage できないため)。
+    img.addEventListener("load", () => {
+      this.redrawMosaicForLayer(layer);
+    });
+
+    return layer;
   }
 
   private createAudioLayer(): AudioLayer {
@@ -295,6 +337,7 @@ export class PlaybackEngine {
       layer.wrapper.style.display = "none";
       layer.video.pause();
       layer.currentClipId = null;
+      this.hideMosaic(layer);
       return;
     }
 
@@ -310,6 +353,7 @@ export class PlaybackEngine {
       layer.img.style.display = "none";
       layer.unsupportedDiv.style.display = "none";
       layer.video.pause();
+      this.hideMosaic(layer);
       this.renderTextClip(layer, clip);
       layer.currentClipId = clip.id;
       return;
@@ -318,6 +362,7 @@ export class PlaybackEngine {
     const asset = clip.assetId ? (project.assets.find((a) => a.id === clip.assetId) ?? null) : null;
     if (!asset) {
       layer.wrapper.style.display = "none";
+      this.hideMosaic(layer);
       return;
     }
 
@@ -327,6 +372,7 @@ export class PlaybackEngine {
       layer.textDiv.style.display = "none";
       layer.unsupportedDiv.style.display = "block";
       layer.video.pause();
+      this.hideMosaic(layer);
       layer.currentClipId = clip.id;
       return;
     }
@@ -349,6 +395,7 @@ export class PlaybackEngine {
         layer.currentSrcPath = path;
       }
       layer.currentClipId = clip.id;
+      this.renderMosaic(layer, clip, layer.img, w, h, localT);
       return;
     }
 
@@ -382,6 +429,120 @@ export class PlaybackEngine {
     }
 
     layer.currentClipId = clip.id;
+    this.renderMosaic(layer, clip, layer.video, w, h, localT);
+  }
+
+  /** モザイク canvas をクリアして非表示にする。 */
+  private hideMosaic(layer: VideoLayer): void {
+    if (layer.mosaicCanvas.style.display === "none") return;
+    const ctx = layer.mosaicCanvas.getContext("2d");
+    ctx?.clearRect(0, 0, layer.mosaicCanvas.width, layer.mosaicCanvas.height);
+    layer.mosaicCanvas.style.display = "none";
+  }
+
+  /**
+   * モザイク領域を canvas に描画する(DESIGN §13.2 のプレビュー方式)。
+   * (1) blockSize ごとにフレーム全体を 1/blockSize でオフスクリーンへ縮小描画し、
+   * (2) メイン canvas で回転矩形パスに clip して imageSmoothingEnabled=false で拡大描画する。
+   */
+  private renderMosaic(
+    layer: VideoLayer,
+    clip: Clip,
+    source: HTMLVideoElement | HTMLImageElement,
+    w: number,
+    h: number,
+    localT: number,
+  ): void {
+    const active: Array<{ blockSize: number; cx: number; cy: number; w: number; h: number; rotation: number }> = [];
+    for (const region of clip.mosaics) {
+      if (!region.enabled) continue;
+      const s = sampleRegion(region, localT);
+      if (!s || !s.visible || s.w <= 0 || s.h <= 0) continue;
+      active.push({ blockSize: region.blockSize, cx: s.cx, cy: s.cy, w: s.w, h: s.h, rotation: s.rotation });
+    }
+    if (active.length === 0) {
+      this.hideMosaic(layer);
+      return;
+    }
+
+    // ソースフレームが未準備なら前回の内容を残さないようクリアだけして待つ
+    // (video: seeked / img: load 後に redrawMosaicForLayer で再描画される)。
+    const ready =
+      source instanceof HTMLVideoElement
+        ? source.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+        : source.complete && source.naturalWidth > 0;
+    const canvas = layer.mosaicCanvas;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, w, h);
+    canvas.style.display = "block";
+    if (!ready) return;
+
+    // (1) blockSize ごとの縮小フレーム(同一 blockSize の領域間で共有)。
+    const scaledFrames = new Map<number, HTMLCanvasElement>();
+    for (const a of active) {
+      if (scaledFrames.has(a.blockSize)) continue;
+      const sw = Math.max(1, Math.ceil(w / a.blockSize));
+      const sh = Math.max(1, Math.ceil(h / a.blockSize));
+      let off = layer.mosaicScaled.get(a.blockSize);
+      if (!off) {
+        off = document.createElement("canvas");
+        layer.mosaicScaled.set(a.blockSize, off);
+      }
+      if (off.width !== sw || off.height !== sh) {
+        off.width = sw;
+        off.height = sh;
+      }
+      const octx = off.getContext("2d");
+      if (!octx) continue;
+      octx.clearRect(0, 0, sw, sh);
+      octx.drawImage(source, 0, 0, sw, sh);
+      scaledFrames.set(a.blockSize, off);
+    }
+
+    // (2) 回転矩形パスに clip して拡大描画。
+    for (const a of active) {
+      const off = scaledFrames.get(a.blockSize);
+      if (!off) continue;
+      ctx.save();
+      ctx.translate(a.cx, a.cy);
+      ctx.rotate((a.rotation * Math.PI) / 180);
+      ctx.beginPath();
+      ctx.rect(-a.w / 2, -a.h / 2, a.w, a.h);
+      ctx.clip();
+      // clip パス設定後は元のフレーム座標系に戻して全体を拡大描画する
+      // (モザイクのブロック格子はソースに対して固定のままにする)。
+      ctx.rotate((-a.rotation * Math.PI) / 180);
+      ctx.translate(-a.cx, -a.cy);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(off, 0, 0, off.width, off.height, 0, 0, w, h);
+      ctx.restore();
+    }
+  }
+
+  /** seeked / load 後にモザイクを現在フレームで描き直す(一時停止中のシーク対応)。 */
+  private redrawMosaicForLayer(layer: VideoLayer): void {
+    if (!layer.currentClipId) return;
+    const project = useProjectStore.getState().project;
+    for (const track of project.videoTracks) {
+      const clip = track.clips.find((c) => c.id === layer.currentClipId);
+      if (!clip) continue;
+      if (clip.text || clip.assetId === null) return;
+      const asset = project.assets.find((a) => a.id === clip.assetId) ?? null;
+      if (!asset || asset.kind === "audio") return;
+      const w = asset.width ?? project.settings.width;
+      const h = asset.height ?? project.settings.height;
+      const source = asset.kind === "image" ? layer.img : layer.video;
+      const localT = this.lastRenderedPlayhead - clip.start;
+      this.renderMosaic(layer, clip, source, w, h, localT);
+      return;
+    }
   }
 
   private renderTextClip(layer: VideoLayer, clip: Clip): void {

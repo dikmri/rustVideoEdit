@@ -5,6 +5,9 @@ import { useTranslation } from "react-i18next";
 
 import { listSystemFonts } from "../../lib/ipc";
 import { log } from "../../lib/logger";
+import { MOSAIC_BLOCK_SIZE_MAX, MOSAIC_BLOCK_SIZE_MIN } from "../../lib/mosaic";
+import { recordMosaicKeyframeAtPlayhead } from "../../lib/mosaicActions";
+import { formatTimecode } from "../../lib/time";
 import { useProjectStore } from "../../stores/projectStore";
 import { useUIStore } from "../../stores/uiStore";
 import type { Clip, Effect, ProjectSettings } from "../../types/model";
@@ -304,7 +307,139 @@ function ClipPropertiesForm({ clip }: { clip: Clip }): JSX.Element {
 
       {!isAudioAsset && <EffectsSection clip={clip} onUpdate={update} />}
 
+      {!isText && !isAudioAsset && asset && <MosaicSection clip={clip} />}
+
       {isText && clip.text && <TextSection clip={clip} text={clip.text} onUpdate={update} />}
+    </div>
+  );
+}
+
+/** モザイクセクション(DESIGN.md §13.2)。video/image クリップ選択時のみ表示される。 */
+function MosaicSection({ clip }: { clip: Clip }): JSX.Element {
+  const { t } = useTranslation();
+  const fps = useProjectStore((s) => s.project.settings.fps);
+  const mosaicEditMode = useUIStore((s) => s.mosaicEditMode);
+  const selectedRegionId = useUIStore((s) => s.selectedMosaicRegionId);
+
+  const selectedRegion = clip.mosaics.find((r) => r.id === selectedRegionId) ?? null;
+
+  function currentLocalTime(): number {
+    const playhead = useUIStore.getState().playhead;
+    return Math.min(Math.max(playhead - clip.start, 0), clip.duration);
+  }
+
+  function addRegion(): void {
+    const newId = useProjectStore.getState().addMosaicRegion(clip.id, currentLocalTime());
+    if (newId) useUIStore.getState().setSelectedMosaicRegionId(newId);
+  }
+
+  function removeRegion(regionId: string): void {
+    useProjectStore.getState().removeMosaicRegion(clip.id, regionId);
+    if (selectedRegionId === regionId) useUIStore.getState().setSelectedMosaicRegionId(null);
+  }
+
+  function seekToKeyframe(time: number): void {
+    useUIStore.getState().setPlayhead(clip.start + Math.max(0, time));
+    log.info("ui", `モザイクキーフレームへシーク: clipId=${clip.id} time=${time.toFixed(3)}`);
+  }
+
+  function toggleEditMode(): void {
+    const next = !mosaicEditMode;
+    useUIStore.getState().setMosaicEditMode(next);
+    log.info("ui", `モザイク編集モード: ${next ? "開始" : "終了"} clipId=${clip.id}`);
+  }
+
+  return (
+    <div className="properties-section">
+      <h3 className="properties-section-title">{t("properties.mosaic")}</h3>
+
+      {clip.mosaics.length === 0 && <div className="text-sub">{t("properties.mosaicNoRegions")}</div>}
+
+      {clip.mosaics.map((region, index) => (
+        <div
+          key={region.id}
+          className={`mosaic-region-item ${region.id === selectedRegionId ? "mosaic-region-item-selected" : ""}`}
+          onClick={() => useUIStore.getState().setSelectedMosaicRegionId(region.id)}
+        >
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <span>{t("properties.mosaicRegion", { index: index + 1 })}</span>
+            <button
+              className="btn btn-icon"
+              title={t("properties.mosaicRemoveRegion")}
+              onClick={(e) => {
+                e.stopPropagation();
+                removeRegion(region.id);
+              }}
+            >
+              ×
+            </button>
+          </div>
+          <label className="row properties-checkbox" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={region.enabled}
+              onChange={(e) =>
+                useProjectStore.getState().setMosaicRegionProps(clip.id, region.id, { enabled: e.target.checked })
+              }
+            />
+            {t("properties.mosaicEnabled")}
+          </label>
+          <div className="properties-row">
+            <label>{t("properties.mosaicBlockSize")}</label>
+            <input
+              type="range"
+              min={MOSAIC_BLOCK_SIZE_MIN}
+              max={MOSAIC_BLOCK_SIZE_MAX}
+              step={1}
+              value={region.blockSize}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                useProjectStore
+                  .getState()
+                  .setMosaicRegionProps(clip.id, region.id, { blockSize: Number(e.target.value) })
+              }
+            />
+            <span className="mosaic-blocksize-value">{region.blockSize}</span>
+          </div>
+        </div>
+      ))}
+
+      <div className="row" style={{ gap: 8 }}>
+        <button className="btn" onClick={addRegion}>
+          + {t("properties.mosaicAddRegion")}
+        </button>
+        <button className={`btn ${mosaicEditMode ? "btn-active" : ""}`} onClick={toggleEditMode}>
+          {t("properties.mosaicEditInPreview")}
+        </button>
+      </div>
+
+      {mosaicEditMode && <div className="text-sub mosaic-shortcut-hint">{t("properties.mosaicShortcutHint")}</div>}
+
+      {selectedRegion && (
+        <>
+          <h3 className="properties-section-title">{t("properties.mosaicKeyframes")}</h3>
+          <ul className="mosaic-kf-list">
+            {selectedRegion.keyframes.map((kf, i) => (
+              <li key={i} className="row mosaic-kf-item">
+                <button className="mosaic-kf-time" onClick={() => seekToKeyframe(kf.time)}>
+                  {formatTimecode(Math.max(0, kf.time), fps)}
+                </button>
+                <button
+                  className="btn btn-icon"
+                  title={t("properties.mosaicRemoveKeyframe")}
+                  disabled={selectedRegion.keyframes.length <= 1}
+                  onClick={() => useProjectStore.getState().removeMosaicKeyframe(clip.id, selectedRegion.id, i)}
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button className="btn" onClick={() => recordMosaicKeyframeAtPlayhead()}>
+            {t("properties.mosaicAddKeyframe")}
+          </button>
+        </>
+      )}
     </div>
   );
 }

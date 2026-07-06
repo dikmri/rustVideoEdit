@@ -1,10 +1,13 @@
 // プロジェクトアスペクト比を保つ黒ステージ(DESIGN.md §7, §9)。
 // ResizeObserver で外枠のサイズに追従し、プロジェクト座標→表示座標への
 // スケーリングを CSS transform: scale で行う。実体レイヤーは PlaybackEngine が管理する。
+// モザイク編集オーバーレイ(§13.2)はステージ内の React 子として重ねる
+// (PlaybackEngine は自分の追加したレイヤーのみ操作するため共存できる)。
 import { useEffect, useRef, useState } from "react";
 
 import { playbackEngine } from "../../lib/playback/PlaybackEngine";
 import { useProjectStore } from "../../stores/projectStore";
+import { MosaicEditOverlay } from "./MosaicEditOverlay";
 
 export function PreviewSurface(): JSX.Element {
   const width = useProjectStore((s) => s.project.settings.width);
@@ -48,7 +51,9 @@ export function PreviewSurface(): JSX.Element {
           height: `${height}px`,
           transform: `scale(${scale})`,
         }}
-      />
+      >
+        <MosaicEditOverlay stageScale={scale} />
+      </div>
     </div>
   );
 }

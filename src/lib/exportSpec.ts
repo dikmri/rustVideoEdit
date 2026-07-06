@@ -79,6 +79,8 @@ function buildVideoClips(project: Project, indexOf: Map<string, number>): VClip[
         assetW: asset?.width ?? null,
         assetH: asset?.height ?? null,
         isImage: asset?.kind === "image",
+        // §13.2: 全 region をそのまま渡す(enabled=false や空 keyframes は Rust 側がフィルタ)。
+        mosaics: clip.mosaics.map((r) => ({ ...r, keyframes: r.keyframes.map((k) => ({ ...k })) })),
       });
     }
   }

@@ -4,6 +4,12 @@
 import i18n from "../i18n";
 import { useProjectStore, undo, redo } from "../stores/projectStore";
 import { useUIStore } from "../stores/uiStore";
+import {
+  recordMosaicKeyframeAtPlayhead,
+  resetMosaicRegionRotation,
+  rotateMosaicRegion,
+  toggleMosaicRegionVisible,
+} from "./mosaicActions";
 import { newProject, openProject, saveProject } from "./projectActions";
 import { log } from "./logger";
 
@@ -172,6 +178,24 @@ export function installGlobalShortcuts(): () => void {
         return;
       }
       return; // 未対応の Ctrl 修飾は無視する
+    }
+
+    // モザイク編集モード中は Q/E/R/K/H をモザイク操作に割り当てる(DESIGN §13.2)。
+    // 既存のグローバル K(停止)等との衝突はモザイク側を優先し、既存動作を抑止する
+    // (領域未選択で操作が空振りした場合も、混乱を避けるため既存動作は発動させない)。
+    if (ui.mosaicEditMode) {
+      const key = e.key.toLowerCase();
+      if (key === "q" || key === "e" || key === "r" || key === "k" || key === "h") {
+        e.preventDefault();
+        let handled = false;
+        if (key === "q") handled = rotateMosaicRegion(-5);
+        else if (key === "e") handled = rotateMosaicRegion(5);
+        else if (key === "r") handled = resetMosaicRegionRotation();
+        else if (key === "k") handled = recordMosaicKeyframeAtPlayhead();
+        else handled = toggleMosaicRegionVisible();
+        if (handled) log.info("ui", `モザイクショートカット: ${key.toUpperCase()}`);
+        return;
+      }
     }
 
     const duration = store.getTimelineDuration();

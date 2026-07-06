@@ -52,6 +52,10 @@ export interface UIState {
   theme: ThemePreference;
   /** 書き出し完了音の有効/無効(§13.4)。既定 true。永続化は lib/appSettings.ts が担う。 */
   soundEnabled: boolean;
+  /** モザイク編集モード(§13.2)。選択クリップのレイヤー上に編集オーバーレイを表示する。 */
+  mosaicEditMode: boolean;
+  /** 選択中のモザイク領域 ID(§13.2)。 */
+  selectedMosaicRegionId: string | null;
 
   setPlayhead: (t: number) => void;
   setPlaying: (playing: boolean) => void;
@@ -72,6 +76,8 @@ export interface UIState {
   setFfmpegAvailable: (available: boolean | null) => void;
   setTheme: (theme: ThemePreference) => void;
   setSoundEnabled: (enabled: boolean) => void;
+  setMosaicEditMode: (on: boolean) => void;
+  setSelectedMosaicRegionId: (regionId: string | null) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -92,12 +98,29 @@ export const useUIStore = create<UIState>()(
     ffmpegAvailable: null,
     theme: "system",
     soundEnabled: true,
+    mosaicEditMode: false,
+    selectedMosaicRegionId: null,
 
     setPlayhead: (t) => set({ playhead: Math.max(0, t) }),
     setPlaying: (playing) => set({ playing }),
     togglePlaying: () => set((s) => ({ playing: !s.playing })),
-    selectClip: (clipId) => set({ selectedClipIds: clipId ? [clipId] : [] }),
-    setSelectedClipIds: (ids) => set({ selectedClipIds: ids }),
+    // クリップ選択の変更/解除でモザイク編集モードを終了する(§13.2)。
+    selectClip: (clipId) =>
+      set((s) => {
+        const next = clipId ? [clipId] : [];
+        const changed = next.length !== s.selectedClipIds.length || next[0] !== s.selectedClipIds[0];
+        return changed
+          ? { selectedClipIds: next, mosaicEditMode: false, selectedMosaicRegionId: null }
+          : { selectedClipIds: next };
+      }),
+    setSelectedClipIds: (ids) =>
+      set((s) => {
+        const changed =
+          ids.length !== s.selectedClipIds.length || ids.some((id, i) => id !== s.selectedClipIds[i]);
+        return changed
+          ? { selectedClipIds: ids, mosaicEditMode: false, selectedMosaicRegionId: null }
+          : { selectedClipIds: ids };
+      }),
     setSelectedAssetId: (assetId) => set({ selectedAssetId: assetId }),
     setTool: (tool) => set({ tool }),
     setPxPerSecond: (px) =>
@@ -113,5 +136,7 @@ export const useUIStore = create<UIState>()(
     setFfmpegAvailable: (available) => set({ ffmpegAvailable: available }),
     setTheme: (theme) => set({ theme }),
     setSoundEnabled: (enabled) => set({ soundEnabled: enabled }),
+    setMosaicEditMode: (on) => set(on ? { mosaicEditMode: true } : { mosaicEditMode: false }),
+    setSelectedMosaicRegionId: (regionId) => set({ selectedMosaicRegionId: regionId }),
   })),
 );
