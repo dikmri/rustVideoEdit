@@ -15,6 +15,7 @@ import { Timeline } from "./components/timeline/Timeline";
 import { checkFfmpeg } from "./lib/ipc";
 import { log } from "./lib/logger";
 import { installGlobalShortcuts } from "./lib/shortcuts";
+import { installWaveformAutoGeneration } from "./lib/waveform";
 import { useUIStore } from "./stores/uiStore";
 
 const DEFAULT_TIMELINE_HEIGHT_RATIO = 0.4;
@@ -34,6 +35,11 @@ function App(): JSX.Element {
 
   useEffect(() => {
     return installGlobalShortcuts();
+  }, []);
+
+  // 波形の自動生成(DESIGN.md §14.3): 新規取込・既存プロジェクト読込の両方をここで一括して扱う。
+  useEffect(() => {
+    return installWaveformAutoGeneration();
   }, []);
 
   useEffect(() => {

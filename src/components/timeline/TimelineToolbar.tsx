@@ -1,6 +1,7 @@
 // タイムラインツールバー(DESIGN.md §9)。ツール切替・分割・削除・リップル削除・スナップ・
-// テキストクリップ追加・ズーム・トラック追加。分割/削除/リップル削除/テキスト追加は
+// テキストクリップ追加・SRT 読込・ズーム・トラック追加。分割/削除/リップル削除/テキスト追加は
 // lib/shortcuts.ts の共有アクションを呼び、対応するキーボードショートカットと実装を一本化する。
+import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -10,9 +11,13 @@ import {
   IconRippleDelete,
   IconScissors,
   IconSnap,
+  IconSubtitles,
   IconTextT,
   IconTrash,
 } from "../common/icons";
+// SRT 読込(§14.2)は .rvep 専用ではない汎用テキスト読込コマンドとして load_project(lib/ipc.ts)を
+// 再利用する(Rust 側は中身を解釈せず read_to_string するだけなので任意テキストの読込に転用できる)。
+import { loadProject as readTextFile } from "../../lib/ipc";
 import { log } from "../../lib/logger";
 import {
   addTextClipAtPlayhead,
@@ -20,6 +25,7 @@ import {
   rippleDeleteSelectedClips,
   splitSelectedAtPlayhead,
 } from "../../lib/shortcuts";
+import { parseSrt } from "../../lib/srt";
 import { useProjectStore } from "../../stores/projectStore";
 import { MAX_PX_PER_SECOND, MIN_PX_PER_SECOND, useUIStore } from "../../stores/uiStore";
 
@@ -42,6 +48,32 @@ export function TimelineToolbar({ onZoomFit }: TimelineToolbarProps): JSX.Elemen
   function handleToggleSnap(): void {
     useUIStore.getState().toggleSnap();
     log.info("ui", `スナップ切替: ${!snapEnabled}`);
+  }
+
+  /** SRT 読込(§14.2): ファイル選択 → パース → 新規 video トラックへ一括配置(単一 undo)。 */
+  async function handleImportSrt(): Promise<void> {
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: t("timeline.toolbar.srtFilterName"), extensions: ["srt"] }],
+      });
+      if (!selected || Array.isArray(selected)) return;
+
+      const raw = await readTextFile(selected);
+      const cues = parseSrt(raw);
+      log.info("ui", `SRT パース: path=${selected} cues=${cues.length}`);
+      if (cues.length === 0) return;
+
+      const result = useProjectStore.getState().importSrtCues(cues);
+      if (result) {
+        log.info(
+          "ui",
+          `SRT読込: path=${selected} trackId=${result.trackId} 追加クリップ数=${result.count}`,
+        );
+      }
+    } catch (err) {
+      log.error("ui", `SRT の読込に失敗しました: ${String(err)}`);
+    }
   }
 
   return (
@@ -104,6 +136,9 @@ export function TimelineToolbar({ onZoomFit }: TimelineToolbarProps): JSX.Elemen
 
       <button className="btn btn-icon" title={t("timeline.toolbar.addText")} onClick={addTextClipAtPlayhead}>
         <IconTextT size={15} />
+      </button>
+      <button className="btn btn-icon" title={t("timeline.toolbar.importSrt")} onClick={() => void handleImportSrt()}>
+        <IconSubtitles size={15} />
       </button>
 
       <div className="timeline-toolbar-divider" />

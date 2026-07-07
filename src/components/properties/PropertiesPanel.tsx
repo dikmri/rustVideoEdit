@@ -10,8 +10,25 @@ import { recordMosaicKeyframeAtPlayhead } from "../../lib/mosaicActions";
 import { formatTimecode } from "../../lib/time";
 import { useProjectStore } from "../../stores/projectStore";
 import { useUIStore } from "../../stores/uiStore";
-import type { Clip, Effect, ProjectSettings } from "../../types/model";
+import type { Clip, Effect, ProjectSettings, TransitionType } from "../../types/model";
 import { DragNumber } from "./DragNumber";
+
+/** トランジション種別(DESIGN.md §14.1)。テキストクリップは dissolve のみ許可。 */
+const TRANSITION_TYPES: TransitionType[] = [
+  "dissolve",
+  "wipeleft",
+  "wiperight",
+  "wipeup",
+  "wipedown",
+  "slideleft",
+  "slideright",
+];
+
+/** トランジション長を 0.1..min(3, clip.duration) にクランプする(§14.1)。 */
+function clampTransitionDuration(value: number, clipDuration: number): number {
+  const max = Math.min(3, clipDuration);
+  return Math.min(max, Math.max(0.1, value));
+}
 
 const RESOLUTION_PRESETS: Array<{ label: string; width: number; height: number }> = [
   { label: "1920x1080", width: 1920, height: 1080 },
@@ -130,6 +147,8 @@ function ClipPropertiesForm({ clip }: { clip: Clip }): JSX.Element {
   const isAudioAsset = asset?.kind === "audio";
   const hasAudio = !isText && !isImage; // video/audio アセットは音量制御あり
   const speedEditable = !isText && !isImage;
+  // 音声切り離し(§14.3)対象: hasAudio な video クリップ(テキスト除く)。既にミュート済みなら再表示不要。
+  const canDetachAudio = asset?.kind === "video" && asset.hasAudio && !clip.muted;
 
   function update(partial: Partial<Clip>): void {
     useProjectStore.getState().updateClip(clip.id, partial);
@@ -138,6 +157,11 @@ function ClipPropertiesForm({ clip }: { clip: Clip }): JSX.Element {
   function updateAndLog(partial: Partial<Clip>, label: string): void {
     update(partial);
     log.info("ui", `プロパティ変更: clipId=${clip.id} ${label}`);
+  }
+
+  // ログは projectStore.detachAudio 内で記録するため、ここでは呼び出しのみ行う(二重記録防止)。
+  function handleDetachAudio(): void {
+    useProjectStore.getState().detachAudio(clip.id);
   }
 
   const kindLabel = isText
@@ -273,6 +297,11 @@ function ClipPropertiesForm({ clip }: { clip: Clip }): JSX.Element {
             />
             {t("properties.muted")}
           </label>
+          {canDetachAudio && (
+            <button className="btn" onClick={handleDetachAudio}>
+              {t("properties.detachAudio")}
+            </button>
+          )}
         </div>
       )}
 
@@ -305,11 +334,79 @@ function ClipPropertiesForm({ clip }: { clip: Clip }): JSX.Element {
         </div>
       </div>
 
+      {!isAudioAsset && <TransitionSection clip={clip} isText={isText} onUpdate={update} />}
+
       {!isAudioAsset && <EffectsSection clip={clip} onUpdate={update} />}
 
       {!isText && !isAudioAsset && asset && <MosaicSection clip={clip} />}
 
       {isText && clip.text && <TextSection clip={clip} text={clip.text} onUpdate={update} />}
+    </div>
+  );
+}
+
+/** トランジション(イン)セクション(DESIGN.md §14.1)。video/image/テキストクリップ選択時のみ表示される。 */
+function TransitionSection({
+  clip,
+  isText,
+  onUpdate,
+}: {
+  clip: Clip;
+  isText: boolean;
+  onUpdate: (partial: Partial<Clip>) => void;
+}): JSX.Element {
+  const { t } = useTranslation();
+  const current = clip.transitionIn;
+  const allowedTypes = isText ? (["dissolve"] as TransitionType[]) : TRANSITION_TYPES;
+
+  function setType(value: string): void {
+    if (value === "none") {
+      onUpdate({ transitionIn: null });
+      log.info("ui", `プロパティ変更: clipId=${clip.id} transitionIn=none`);
+      return;
+    }
+    const type = value as TransitionType;
+    const duration = clampTransitionDuration(current?.duration ?? 1, clip.duration);
+    onUpdate({ transitionIn: { type, duration } });
+    log.info("ui", `プロパティ変更: clipId=${clip.id} transitionIn.type=${type} duration=${duration.toFixed(2)}`);
+  }
+
+  function setDuration(v: number): void {
+    if (!current) return;
+    onUpdate({ transitionIn: { ...current, duration: clampTransitionDuration(v, clip.duration) } });
+  }
+
+  return (
+    <div className="properties-section">
+      <h3 className="properties-section-title">{t("properties.transitionIn")}</h3>
+      <div className="properties-row">
+        <label>{t("properties.transitionType")}</label>
+        <select value={current?.type ?? "none"} onChange={(e) => setType(e.target.value)}>
+          <option value="none">{t("common.none")}</option>
+          {allowedTypes.map((type) => (
+            <option key={type} value={type}>
+              {t(`properties.transitionType.${type}`)}
+            </option>
+          ))}
+        </select>
+      </div>
+      {current && (
+        <div className="properties-row">
+          <label>{t("properties.transitionDuration")}</label>
+          <DragNumber
+            value={current.duration}
+            min={0.1}
+            max={Math.min(3, clip.duration)}
+            step={0.05}
+            precision={2}
+            suffix="s"
+            onChange={setDuration}
+            onCommit={(v) =>
+              log.info("ui", `プロパティ変更: clipId=${clip.id} transitionIn.duration=${v.toFixed(2)}`)
+            }
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -658,6 +755,89 @@ function TextSection({
         >
           {t("properties.textBackgroundNone")}
         </button>
+      </div>
+
+      {/* テキスト強化(DESIGN.md §14.2): 縁取り/影/行間。 */}
+      <div className="properties-row">
+        <label>{t("properties.textOutline")}</label>
+        <input
+          type="color"
+          value={text.outlineColor ?? "#000000"}
+          onChange={(e) =>
+            updateTextAndLog(
+              { outlineColor: e.target.value, outlineWidth: text.outlineWidth > 0 ? text.outlineWidth : 4 },
+              `text.outlineColor=${e.target.value}`,
+            )
+          }
+        />
+        <DragNumber
+          value={text.outlineWidth}
+          min={0}
+          max={20}
+          step={0.5}
+          precision={1}
+          suffix="px"
+          disabled={text.outlineColor === null}
+          onChange={(v) => updateText({ outlineWidth: v })}
+          onCommit={() => log.info("ui", `プロパティ変更: clipId=${clip.id} text.outlineWidth=${text.outlineWidth}`)}
+        />
+        <button
+          className="btn"
+          disabled={text.outlineColor === null}
+          onClick={() => updateTextAndLog({ outlineColor: null, outlineWidth: 0 }, "text.outline=none")}
+        >
+          {t("properties.textOutlineNone")}
+        </button>
+      </div>
+      <div className="properties-row">
+        <label>{t("properties.textShadow")}</label>
+        <input
+          type="color"
+          value={text.shadowColor ?? "#000000"}
+          onChange={(e) => updateTextAndLog({ shadowColor: e.target.value }, `text.shadowColor=${e.target.value}`)}
+        />
+        <button
+          className="btn"
+          disabled={text.shadowColor === null}
+          onClick={() => updateTextAndLog({ shadowColor: null }, "text.shadow=none")}
+        >
+          {t("properties.textShadowNone")}
+        </button>
+      </div>
+      <div className="properties-row">
+        <label>{t("properties.textShadowX")}</label>
+        <DragNumber
+          value={text.shadowX}
+          min={-50}
+          max={50}
+          step={0.5}
+          precision={1}
+          onChange={(v) => updateText({ shadowX: v })}
+          onCommit={() => log.info("ui", `プロパティ変更: clipId=${clip.id} text.shadowX=${text.shadowX}`)}
+        />
+        <label>{t("properties.textShadowY")}</label>
+        <DragNumber
+          value={text.shadowY}
+          min={-50}
+          max={50}
+          step={0.5}
+          precision={1}
+          onChange={(v) => updateText({ shadowY: v })}
+          onCommit={() => log.info("ui", `プロパティ変更: clipId=${clip.id} text.shadowY=${text.shadowY}`)}
+        />
+      </div>
+      <div className="properties-row">
+        <label>{t("properties.textLineSpacing")}</label>
+        <DragNumber
+          value={text.lineSpacing}
+          min={0}
+          max={100}
+          step={1}
+          precision={0}
+          suffix="px"
+          onChange={(v) => updateText({ lineSpacing: v })}
+          onCommit={() => log.info("ui", `プロパティ変更: clipId=${clip.id} text.lineSpacing=${text.lineSpacing}`)}
+        />
       </div>
     </div>
   );

@@ -25,6 +25,7 @@
   --clip-text-sub: rgba(60, 58, 54, 0.65); /* クリップ内サブ文字 */
   --clip-fade-tri: rgba(60, 58, 54, 0.45); /* フェード三角 */
   --clip-badge-bg: rgba(60, 58, 54, 0.55); /* 速度バッジ背景 */
+  --clip-waveform: rgba(60, 58, 54, 0.4); /* 波形(§14.3: テキスト色の 40% 透明度) */
   --on-accent: #ffffff; /* accent 塗り上の文字色 */
   --warning-bg: #f3e6c8; /* ffmpeg 警告帯の背景 */
 }
@@ -53,5 +54,6 @@
   --clip-text-sub: rgba(232, 229, 222, 0.75);
   --clip-fade-tri: rgba(232, 229, 222, 0.5);
   --clip-badge-bg: rgba(0, 0, 0, 0.55);
+  --clip-waveform: rgba(232, 229, 222, 0.45);
   --warning-bg: #4a4130;
 }

@@ -101,6 +101,27 @@
   "properties.mosaicEditInPreview": "Edit in preview",
   "properties.mosaicShortcutHint": "Q/E: rotate ∓5° / R: reset rotation / K: add keyframe / H: toggle visibility",
 
+  "properties.transitionIn": "Transition (in)",
+  "properties.transitionType": "Type",
+  "properties.transitionType.dissolve": "Dissolve",
+  "properties.transitionType.wipeleft": "Wipe (from left)",
+  "properties.transitionType.wiperight": "Wipe (from right)",
+  "properties.transitionType.wipeup": "Wipe (from top)",
+  "properties.transitionType.wipedown": "Wipe (from bottom)",
+  "properties.transitionType.slideleft": "Slide (from right)",
+  "properties.transitionType.slideright": "Slide (from left)",
+  "properties.transitionDuration": "Duration",
+
+  "properties.detachAudio": "Detach audio",
+
+  "properties.textOutline": "Outline",
+  "properties.textOutlineNone": "No outline",
+  "properties.textShadow": "Shadow",
+  "properties.textShadowNone": "No shadow",
+  "properties.textShadowX": "Shadow X",
+  "properties.textShadowY": "Shadow Y",
+  "properties.textLineSpacing": "Line spacing",
+
   "timeline.toolbar.selectTool": "Select tool (V)",
   "timeline.toolbar.razorTool": "Razor tool (C)",
   "timeline.toolbar.split": "Split at playhead (Ctrl+K)",
@@ -113,6 +134,8 @@
   "timeline.toolbar.zoomFit": "Fit to window",
   "timeline.toolbar.addVideoTrack": "Add video track",
   "timeline.toolbar.addAudioTrack": "Add audio track",
+  "timeline.toolbar.importSrt": "Import SRT subtitles",
+  "timeline.toolbar.srtFilterName": "SRT subtitles",
 
   "timeline.track.lock": "Lock",
   "timeline.track.unlock": "Unlock",

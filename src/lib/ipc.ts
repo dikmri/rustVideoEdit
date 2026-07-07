@@ -78,6 +78,11 @@ export async function listSystemFonts(): Promise<string[]> {
   return invoke<string[]>("list_system_fonts");
 }
 
+/** 波形 JSON を生成し、その絶対パスを返す(DESIGN.md §14.3)。生成済みならスキップして既存パスを返す。 */
+export async function generateWaveform(assetId: string, path: string): Promise<string> {
+  return invoke<string>("generate_waveform", { assetId, path });
+}
+
 export function onExportProgress(
   handler: (event: ExportProgressEvent) => void,
 ): Promise<UnlistenFn> {

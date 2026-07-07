@@ -101,6 +101,27 @@
   "properties.mosaicEditInPreview": "Editar en la vista previa",
   "properties.mosaicShortcutHint": "Q/E: rotar ∓5° / R: restablecer rotación / K: añadir fotograma clave / H: alternar visibilidad",
 
+  "properties.transitionIn": "Transición (entrada)",
+  "properties.transitionType": "Tipo",
+  "properties.transitionType.dissolve": "Disolvencia",
+  "properties.transitionType.wipeleft": "Barrido (desde la izquierda)",
+  "properties.transitionType.wiperight": "Barrido (desde la derecha)",
+  "properties.transitionType.wipeup": "Barrido (desde arriba)",
+  "properties.transitionType.wipedown": "Barrido (desde abajo)",
+  "properties.transitionType.slideleft": "Deslizar (desde la derecha)",
+  "properties.transitionType.slideright": "Deslizar (desde la izquierda)",
+  "properties.transitionDuration": "Duración",
+
+  "properties.detachAudio": "Separar audio",
+
+  "properties.textOutline": "Contorno",
+  "properties.textOutlineNone": "Sin contorno",
+  "properties.textShadow": "Sombra",
+  "properties.textShadowNone": "Sin sombra",
+  "properties.textShadowX": "Sombra X",
+  "properties.textShadowY": "Sombra Y",
+  "properties.textLineSpacing": "Interlineado",
+
   "timeline.toolbar.selectTool": "Herramienta de selección (V)",
   "timeline.toolbar.razorTool": "Herramienta cuchilla (C)",
   "timeline.toolbar.split": "Dividir en el cabezal (Ctrl+K)",
@@ -113,6 +134,8 @@
   "timeline.toolbar.zoomFit": "Ajustar a la ventana",
   "timeline.toolbar.addVideoTrack": "Agregar pista de video",
   "timeline.toolbar.addAudioTrack": "Agregar pista de audio",
+  "timeline.toolbar.importSrt": "Importar subtítulos SRT",
+  "timeline.toolbar.srtFilterName": "Subtítulos SRT",
 
   "timeline.track.lock": "Bloquear",
   "timeline.track.unlock": "Desbloquear",

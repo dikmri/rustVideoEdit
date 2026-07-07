@@ -101,6 +101,27 @@
   "properties.mosaicEditInPreview": "Modifier dans l'aperçu",
   "properties.mosaicShortcutHint": "Q/E : rotation ∓5° / R : réinitialiser la rotation / K : ajouter une image clé / H : basculer la visibilité",
 
+  "properties.transitionIn": "Transition (entrée)",
+  "properties.transitionType": "Type",
+  "properties.transitionType.dissolve": "Fondu enchaîné",
+  "properties.transitionType.wipeleft": "Volet (depuis la gauche)",
+  "properties.transitionType.wiperight": "Volet (depuis la droite)",
+  "properties.transitionType.wipeup": "Volet (depuis le haut)",
+  "properties.transitionType.wipedown": "Volet (depuis le bas)",
+  "properties.transitionType.slideleft": "Glissement (depuis la droite)",
+  "properties.transitionType.slideright": "Glissement (depuis la gauche)",
+  "properties.transitionDuration": "Durée",
+
+  "properties.detachAudio": "Détacher l'audio",
+
+  "properties.textOutline": "Contour",
+  "properties.textOutlineNone": "Aucun contour",
+  "properties.textShadow": "Ombre",
+  "properties.textShadowNone": "Aucune ombre",
+  "properties.textShadowX": "Ombre X",
+  "properties.textShadowY": "Ombre Y",
+  "properties.textLineSpacing": "Interligne",
+
   "timeline.toolbar.selectTool": "Outil de sélection (V)",
   "timeline.toolbar.razorTool": "Outil lame (C)",
   "timeline.toolbar.split": "Couper à la tête de lecture (Ctrl+K)",
@@ -113,6 +134,8 @@
   "timeline.toolbar.zoomFit": "Ajuster à la fenêtre",
   "timeline.toolbar.addVideoTrack": "Ajouter une piste vidéo",
   "timeline.toolbar.addAudioTrack": "Ajouter une piste audio",
+  "timeline.toolbar.importSrt": "Importer des sous-titres SRT",
+  "timeline.toolbar.srtFilterName": "Sous-titres SRT",
 
   "timeline.track.lock": "Verrouiller",
   "timeline.track.unlock": "Déverrouiller",

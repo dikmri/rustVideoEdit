@@ -101,6 +101,27 @@
   "properties.mosaicEditInPreview": "In der Vorschau bearbeiten",
   "properties.mosaicShortcutHint": "Q/E: Drehen ∓5° / R: Drehung zurücksetzen / K: Keyframe hinzufügen / H: Sichtbarkeit umschalten",
 
+  "properties.transitionIn": "Übergang (Eingang)",
+  "properties.transitionType": "Typ",
+  "properties.transitionType.dissolve": "Überblendung",
+  "properties.transitionType.wipeleft": "Wischblende (von links)",
+  "properties.transitionType.wiperight": "Wischblende (von rechts)",
+  "properties.transitionType.wipeup": "Wischblende (von oben)",
+  "properties.transitionType.wipedown": "Wischblende (von unten)",
+  "properties.transitionType.slideleft": "Schieben (von rechts)",
+  "properties.transitionType.slideright": "Schieben (von links)",
+  "properties.transitionDuration": "Dauer",
+
+  "properties.detachAudio": "Audio abtrennen",
+
+  "properties.textOutline": "Umriss",
+  "properties.textOutlineNone": "Kein Umriss",
+  "properties.textShadow": "Schatten",
+  "properties.textShadowNone": "Kein Schatten",
+  "properties.textShadowX": "Schatten X",
+  "properties.textShadowY": "Schatten Y",
+  "properties.textLineSpacing": "Zeilenabstand",
+
   "timeline.toolbar.selectTool": "Auswahlwerkzeug (V)",
   "timeline.toolbar.razorTool": "Rasierklinge (C)",
   "timeline.toolbar.split": "An der Abspielposition teilen (Strg+K)",
@@ -113,6 +134,8 @@
   "timeline.toolbar.zoomFit": "An Fenster anpassen",
   "timeline.toolbar.addVideoTrack": "Videospur hinzufügen",
   "timeline.toolbar.addAudioTrack": "Audiospur hinzufügen",
+  "timeline.toolbar.importSrt": "SRT-Untertitel importieren",
+  "timeline.toolbar.srtFilterName": "SRT-Untertitel",
 
   "timeline.track.lock": "Sperren",
   "timeline.track.unlock": "Entsperren",

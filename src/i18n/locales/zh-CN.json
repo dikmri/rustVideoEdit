@@ -101,6 +101,27 @@
   "properties.mosaicEditInPreview": "在预览中编辑",
   "properties.mosaicShortcutHint": "Q/E:旋转 ∓5° / R:重置旋转 / K:添加关键帧 / H:切换可见性",
 
+  "properties.transitionIn": "转场(入场)",
+  "properties.transitionType": "类型",
+  "properties.transitionType.dissolve": "溶解",
+  "properties.transitionType.wipeleft": "擦除(从左)",
+  "properties.transitionType.wiperight": "擦除(从右)",
+  "properties.transitionType.wipeup": "擦除(从上)",
+  "properties.transitionType.wipedown": "擦除(从下)",
+  "properties.transitionType.slideleft": "滑动(从右)",
+  "properties.transitionType.slideright": "滑动(从左)",
+  "properties.transitionDuration": "时长",
+
+  "properties.detachAudio": "分离音频",
+
+  "properties.textOutline": "描边",
+  "properties.textOutlineNone": "无描边",
+  "properties.textShadow": "阴影",
+  "properties.textShadowNone": "无阴影",
+  "properties.textShadowX": "阴影 X",
+  "properties.textShadowY": "阴影 Y",
+  "properties.textLineSpacing": "行间距",
+
   "timeline.toolbar.selectTool": "选择工具 (V)",
   "timeline.toolbar.razorTool": "剃刀工具 (C)",
   "timeline.toolbar.split": "在播放头处分割 (Ctrl+K)",
@@ -113,6 +134,8 @@
   "timeline.toolbar.zoomFit": "适应窗口",
   "timeline.toolbar.addVideoTrack": "添加视频轨道",
   "timeline.toolbar.addAudioTrack": "添加音频轨道",
+  "timeline.toolbar.importSrt": "导入 SRT 字幕",
+  "timeline.toolbar.srtFilterName": "SRT 字幕",
 
   "timeline.track.lock": "锁定",
   "timeline.track.unlock": "解锁",

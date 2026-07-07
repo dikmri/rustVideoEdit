@@ -273,6 +273,15 @@ export function IconSpeakerOn(props: IconProps): JSX.Element {
   );
 }
 
+export function IconSubtitles(props: IconProps): JSX.Element {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="5" width="18" height="14" rx="1.5" />
+      <path d="M6 10h6M6 14h9" />
+    </Svg>
+  );
+}
+
 export function IconSpeakerOff(props: IconProps): JSX.Element {
   return (
     <Svg {...props}>

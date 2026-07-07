@@ -6,7 +6,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { useProjectStore } from "../../stores/projectStore";
 import { useUIStore } from "../../stores/uiStore";
-import type { Clip, Effect, Project, Track } from "../../types/model";
+import type { Clip, Effect, Project, Track, TransitionType } from "../../types/model";
 import { sampleRegion } from "../mosaic";
 import { log } from "../logger";
 
@@ -22,6 +22,8 @@ interface ActiveMosaicRegion {
 
 /** currentTime 補正の閾値(秒)。 */
 const SYNC_THRESHOLD_SEC = 0.12;
+/** 「隣接」とみなす許容誤差(秒、DESIGN §14.1: |A.end − B.start| < 0.001)。 */
+const ADJACENT_EPS = 0.001;
 
 interface VideoLayer {
   wrapper: HTMLDivElement;
@@ -35,6 +37,46 @@ interface VideoLayer {
   unsupportedDiv: HTMLDivElement;
   currentSrcPath: string | null;
   currentClipId: string | null;
+}
+
+/**
+ * video トラック 1 本分のレイヤー対(DESIGN §14.1)。primary が通常表示(現在のアクティブクリップ B)、
+ * outgoing はトランジション窓内でのみ直前クリップ A を表示する「送出用」サブレイヤー(z は primary の下)。
+ */
+interface TrackLayers {
+  primary: VideoLayer;
+  outgoing: VideoLayer;
+}
+
+/** 追加のオーバーレイ(トランジション用)。renderClipIntoLayer に渡す。 */
+interface RenderExtras {
+  extraOpacity: number;
+  extraTranslateX: number;
+  /** outgoing 表示用(§14.1)。書き出しでは A の音声は延長されない(extendTail は映像のみ)ため、
+   * プレビューの outgoing でも音声を出さず挙動を一致させる。 */
+  muteAudio: boolean;
+}
+
+const NO_EXTRAS: RenderExtras = { extraOpacity: 1, extraTranslateX: 0, muteAudio: false };
+
+/**
+ * wipe 系トランジションの clip-path(DESIGN §14.1)。p(0..1)は B 側の進行度。
+ * wipeleft/up は表示領域が左/上から広がる(右/下を切る)、wiperight/down はその逆(左/上を切る)。
+ */
+function wipeClipPath(type: TransitionType, p: number): string {
+  const cut = clamp01(1 - p) * 100;
+  switch (type) {
+    case "wipeleft":
+      return `inset(0 ${cut}% 0 0)`;
+    case "wiperight":
+      return `inset(0 0 0 ${cut}%)`;
+    case "wipeup":
+      return `inset(0 0 ${cut}% 0)`;
+    case "wipedown":
+      return `inset(${cut}% 0 0 0)`;
+    default:
+      return "";
+  }
 }
 
 interface AudioLayer {
@@ -77,14 +119,18 @@ function cssFilterFor(effects: Effect[]): string {
   return parts.length > 0 ? parts.join(" ") : "none";
 }
 
-function transformStyle(clip: Clip): string {
+/**
+ * extraTranslateX(既定 0)は slide トランジション(§14.1)用: B の translate(x,y) に
+ * ±stageW*(1−p) を加算する。
+ */
+function transformStyle(clip: Clip, extraTranslateX = 0): string {
   const { x, y, scale, rotation } = clip.transform;
-  return `translate(-50%, -50%) translate(${x}px, ${y}px) rotate(${rotation}deg) scale(${scale})`;
+  return `translate(-50%, -50%) translate(${x + extraTranslateX}px, ${y}px) rotate(${rotation}deg) scale(${scale})`;
 }
 
 export class PlaybackEngine {
   private container: HTMLDivElement | null = null;
-  private videoLayers = new Map<string, VideoLayer>();
+  private videoLayers = new Map<string, TrackLayers>();
   private audioLayers = new Map<string, AudioLayer>();
   private rafId: number | null = null;
   private baseTimeMs = 0;
@@ -144,7 +190,10 @@ export class PlaybackEngine {
     for (const unsub of this.unsubs) unsub();
     this.unsubs = [];
     this.pauseAllMedia();
-    for (const layer of this.videoLayers.values()) layer.wrapper.remove();
+    for (const layers of this.videoLayers.values()) {
+      layers.primary.wrapper.remove();
+      layers.outgoing.wrapper.remove();
+    }
     for (const layer of this.audioLayers.values()) layer.audio.remove();
     this.videoLayers.clear();
     this.audioLayers.clear();
@@ -200,7 +249,10 @@ export class PlaybackEngine {
   }
 
   private pauseAllMedia(): void {
-    for (const layer of this.videoLayers.values()) layer.video.pause();
+    for (const layers of this.videoLayers.values()) {
+      layers.primary.video.pause();
+      layers.outgoing.video.pause();
+    }
     for (const layer of this.audioLayers.values()) layer.audio.pause();
   }
 
@@ -210,21 +262,26 @@ export class PlaybackEngine {
     const project = useProjectStore.getState().project;
 
     const videoTrackIds = new Set(project.videoTracks.map((t) => t.id));
-    for (const [trackId, layer] of this.videoLayers) {
+    for (const [trackId, layers] of this.videoLayers) {
       if (!videoTrackIds.has(trackId)) {
-        layer.wrapper.remove();
+        layers.primary.wrapper.remove();
+        layers.outgoing.wrapper.remove();
         this.videoLayers.delete(trackId);
       }
     }
     project.videoTracks.forEach((track, index) => {
-      let layer = this.videoLayers.get(track.id);
-      if (!layer) {
-        layer = this.createVideoLayer();
-        this.videoLayers.set(track.id, layer);
-        this.container?.appendChild(layer.wrapper);
+      let layers = this.videoLayers.get(track.id);
+      if (!layers) {
+        layers = { primary: this.createVideoLayer(), outgoing: this.createVideoLayer() };
+        this.videoLayers.set(track.id, layers);
+        // outgoing を先に追加(DOM 順・z-index とも primary の下にするため)。
+        this.container?.appendChild(layers.outgoing.wrapper);
+        this.container?.appendChild(layers.primary.wrapper);
       }
-      // index 0 = V1 = 最下層(DESIGN §4)。
-      layer.wrapper.style.zIndex = String(index);
+      // index 0 = V1 = 最下層(DESIGN §4)。各トラックにつき outgoing/primary の 2 枚を使うため
+      // z-index は index*2(outgoing)/index*2+1(primary)で採番し、トラック間の順序を保つ。
+      layers.outgoing.wrapper.style.zIndex = String(index * 2);
+      layers.primary.wrapper.style.zIndex = String(index * 2 + 1);
     });
 
     const audioTrackIds = new Set(project.audioTracks.map((t) => t.id));
@@ -336,8 +393,8 @@ export class PlaybackEngine {
     const playing = useUIStore.getState().playing;
 
     project.videoTracks.forEach((track) => {
-      const layer = this.videoLayers.get(track.id);
-      if (layer) this.renderVideoTrack(project, track, layer, playhead, playing);
+      const layers = this.videoLayers.get(track.id);
+      if (layers) this.renderVideoTrack(project, track, layers, playhead, playing);
     });
 
     project.audioTracks.forEach((track) => {
@@ -346,27 +403,96 @@ export class PlaybackEngine {
     });
   }
 
+  /**
+   * video トラック 1 本分を描画する(DESIGN §14.1)。primary には現在のアクティブクリップ B を、
+   * B がトランジション窓内かつ直前の隣接クリップ A が存在する場合は outgoing に A を表示する
+   * (窓外では outgoing を隠す)。B 自身にはトランジション種別に応じた opacity 乗算/clip-path/
+   * translate 加算を適用する。
+   */
   private renderVideoTrack(
     project: Project,
     track: Track,
-    layer: VideoLayer,
+    layers: TrackLayers,
     playhead: number,
     playing: boolean,
   ): void {
     const clip = findActiveClip(track, playhead);
     if (!clip) {
-      layer.wrapper.style.display = "none";
-      layer.video.pause();
-      layer.currentClipId = null;
-      this.hideMosaic(layer);
+      this.hideClipLayer(layers.primary);
+      this.hideClipLayer(layers.outgoing);
       return;
     }
 
-    layer.wrapper.style.display = "block";
     const localT = playhead - clip.start;
+    const transition = clip.transitionIn;
+    const transitionDuration = transition ? Math.max(1e-3, transition.duration) : 0;
+    // localT はクリップ先頭からの経過秒(findActiveClip により常に >= 0)。
+    const inTransitionWindow = transition !== null && localT < transitionDuration;
+    const progress = inTransitionWindow ? clamp01(localT / transitionDuration) : 1;
+
+    const extras: RenderExtras = { ...NO_EXTRAS };
+    if (inTransitionWindow && transition) {
+      if (transition.type === "dissolve") {
+        extras.extraOpacity = progress;
+      } else if (transition.type === "slideleft") {
+        extras.extraTranslateX = project.settings.width * (1 - progress);
+      } else if (transition.type === "slideright") {
+        extras.extraTranslateX = -project.settings.width * (1 - progress);
+      }
+    }
+
+    this.renderClipIntoLayer(layers.primary, project, track, clip, localT, playing, extras);
+    layers.primary.wrapper.style.clipPath =
+      inTransitionWindow && transition ? wipeClipPath(transition.type, progress) : "";
+
+    // 直前の隣接クリップ A(DESIGN §14.1: |A.end - B.start| < 0.001)を outgoing に表示する。
+    let outgoingClip: Clip | null = null;
+    if (inTransitionWindow) {
+      const idx = track.clips.findIndex((c) => c.id === clip.id);
+      const prev = idx > 0 ? track.clips[idx - 1] : null;
+      if (prev && Math.abs(prev.start + prev.duration - clip.start) < ADJACENT_EPS) {
+        outgoingClip = prev;
+      }
+    }
+
+    if (outgoingClip) {
+      const outgoingLocalT = playhead - outgoingClip.start;
+      this.renderClipIntoLayer(layers.outgoing, project, track, outgoingClip, outgoingLocalT, playing, {
+        ...NO_EXTRAS,
+        muteAudio: true,
+      });
+      layers.outgoing.wrapper.style.clipPath = "";
+    } else {
+      this.hideClipLayer(layers.outgoing);
+    }
+  }
+
+  /** レイヤーを非表示にしてメディアを一時停止し、モザイクをクリアする(クリップ不在時・窓外の outgoing 用)。 */
+  private hideClipLayer(layer: VideoLayer): void {
+    layer.wrapper.style.display = "none";
+    layer.wrapper.style.clipPath = "";
+    layer.video.pause();
+    layer.currentClipId = null;
+    this.hideMosaic(layer);
+  }
+
+  /**
+   * 1 クリップ分の内容を指定レイヤーへ描画する(primary/outgoing 共通)。
+   * extras(既定は無効化)でトランジション用の opacity 乗算/translate 加算を適用できる。
+   */
+  private renderClipIntoLayer(
+    layer: VideoLayer,
+    project: Project,
+    track: Track,
+    clip: Clip,
+    localT: number,
+    playing: boolean,
+    extras: RenderExtras = NO_EXTRAS,
+  ): void {
+    layer.wrapper.style.display = "block";
     const fade = fadeFactor(clip, localT);
-    layer.wrapper.style.opacity = String(clamp01(clip.opacity) * fade);
-    layer.wrapper.style.transform = transformStyle(clip);
+    layer.wrapper.style.opacity = String(clamp01(clip.opacity) * fade * extras.extraOpacity);
+    layer.wrapper.style.transform = transformStyle(clip, extras.extraTranslateX);
     layer.wrapper.style.filter = cssFilterFor(clip.effects);
 
     if (clip.text) {
@@ -434,12 +560,14 @@ export class PlaybackEngine {
     }
 
     layer.video.playbackRate = clip.speed;
+    // outgoing 表示(§14.1)では localT がクリップ自身の duration を超えることがある。
+    // その場合 currentTime はソース末尾以上を指すため、ブラウザが最終フレームで止める挙動に任せる。
     const expected = clip.inPoint + localT * clip.speed;
     if (Math.abs(layer.video.currentTime - expected) > SYNC_THRESHOLD_SEC) {
       layer.video.currentTime = expected;
     }
 
-    const muted = clip.muted || track.muted;
+    const muted = clip.muted || track.muted || extras.muteAudio;
     layer.video.muted = muted;
     layer.video.volume = muted ? 0 : clamp01(clip.volume * fade);
 
@@ -602,6 +730,11 @@ export class PlaybackEngine {
     layer.textDiv.style.textAlign = text.align;
     layer.textDiv.style.background = text.background ? `${text.background}99` : "transparent";
     layer.textDiv.style.padding = text.background ? "4px 8px" : "0";
+    // テキスト強化(DESIGN §14.2): 縁取り/影/行間の CSS 近似。
+    layer.textDiv.style.webkitTextStroke =
+      text.outlineColor && text.outlineWidth > 0 ? `${text.outlineWidth}px ${text.outlineColor}` : "";
+    layer.textDiv.style.textShadow = text.shadowColor ? `${text.shadowX}px ${text.shadowY}px 0 ${text.shadowColor}` : "";
+    layer.textDiv.style.lineHeight = text.lineSpacing > 0 ? `${text.fontSize + text.lineSpacing}px` : "normal";
   }
 
   private renderAudioTrack(

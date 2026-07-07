@@ -101,6 +101,27 @@
   "properties.mosaicEditInPreview": "미리보기에서 편집",
   "properties.mosaicShortcutHint": "Q/E: 회전 ∓5° / R: 회전 초기화 / K: 키프레임 추가 / H: 표시 전환",
 
+  "properties.transitionIn": "트랜지션(인)",
+  "properties.transitionType": "종류",
+  "properties.transitionType.dissolve": "디졸브",
+  "properties.transitionType.wipeleft": "와이프(왼쪽에서)",
+  "properties.transitionType.wiperight": "와이프(오른쪽에서)",
+  "properties.transitionType.wipeup": "와이프(위에서)",
+  "properties.transitionType.wipedown": "와이프(아래에서)",
+  "properties.transitionType.slideleft": "슬라이드(오른쪽에서)",
+  "properties.transitionType.slideright": "슬라이드(왼쪽에서)",
+  "properties.transitionDuration": "길이",
+
+  "properties.detachAudio": "오디오 분리",
+
+  "properties.textOutline": "외곽선",
+  "properties.textOutlineNone": "외곽선 없음",
+  "properties.textShadow": "그림자",
+  "properties.textShadowNone": "그림자 없음",
+  "properties.textShadowX": "그림자 X",
+  "properties.textShadowY": "그림자 Y",
+  "properties.textLineSpacing": "줄 간격",
+
   "timeline.toolbar.selectTool": "선택 도구 (V)",
   "timeline.toolbar.razorTool": "레이저 도구 (C)",
   "timeline.toolbar.split": "재생 헤드 위치에서 분할 (Ctrl+K)",
@@ -113,6 +134,8 @@
   "timeline.toolbar.zoomFit": "전체 보기",
   "timeline.toolbar.addVideoTrack": "비디오 트랙 추가",
   "timeline.toolbar.addAudioTrack": "오디오 트랙 추가",
+  "timeline.toolbar.importSrt": "SRT 자막 불러오기",
+  "timeline.toolbar.srtFilterName": "SRT 자막",
 
   "timeline.track.lock": "잠금",
   "timeline.track.unlock": "잠금 해제",

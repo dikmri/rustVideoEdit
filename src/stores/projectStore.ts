@@ -39,10 +39,21 @@ function createDefaultProject(): Project {
   };
 }
 
+/** テキストスタイルの既定値(§14.2 拡張フィールド)。既定は縁取り/影なし。 */
+const DEFAULT_TEXT_STYLE_EXTRA = {
+  outlineColor: null as string | null,
+  outlineWidth: 0,
+  shadowColor: null as string | null,
+  shadowX: 2,
+  shadowY: 2,
+  lineSpacing: 0,
+};
+
 /**
- * 旧バージョンの .rvep で欠落しているフィールドを既定値で補完する(§13.2, §13.5)。
+ * 旧バージョンの .rvep で欠落しているフィールドを既定値で補完する(§13.2, §13.5, §14.4)。
  * v0.2.0 で MediaAsset に追加された bitrateKbps が無い場合は null を、
- * Clip に追加された mosaics が無い場合は [] を入れる。
+ * Clip に追加された mosaics が無い場合は [] を、transitionIn が無い場合は null を、
+ * TextStyle の新規フィールドが無い場合は既定値を入れる。
  */
 function normalizeProject(project: Project): Project {
   project.assets = project.assets.map((asset) => ({
@@ -53,6 +64,8 @@ function normalizeProject(project: Project): Project {
     track.clips = track.clips.map((clip) => ({
       ...clip,
       mosaics: (clip as Partial<Clip>).mosaics ?? [],
+      transitionIn: (clip as Partial<Clip>).transitionIn ?? null,
+      text: clip.text ? { ...DEFAULT_TEXT_STYLE_EXTRA, ...clip.text } : null,
     }));
   }
   return project;
@@ -73,6 +86,13 @@ function findTrackById(project: Project, trackId: string): Track | null {
 
 function findAssetById(project: Project, assetId: string): MediaAsset | null {
   return project.assets.find((a) => a.id === assetId) ?? null;
+}
+
+/** importSrtCues に渡すキュー(§14.2)。lib/srt.ts の SrtCue と同形(store は srt.ts に依存しない)。 */
+export interface SrtCueInput {
+  start: number;
+  end: number;
+  text: string;
 }
 
 interface ClipLocation {
@@ -210,6 +230,11 @@ export interface ProjectState {
   removeClip: (clipId: string) => void;
   rippleDelete: (clipId: string) => void;
   updateClip: (clipId: string, partial: Partial<Clip>) => void;
+
+  /** video クリップ(hasAudio)の音声を audio トラックへ切り離す(§14.3)。単一 mutate で undo 一回。 */
+  detachAudio: (clipId: string) => string | null;
+  /** SRT キューをテキストクリップ群として新規 video トラックに配置する(§14.2)。単一 mutate で undo 一回。 */
+  importSrtCues: (cues: SrtCueInput[]) => { trackId: string; count: number } | null;
 
   /** モザイク領域を追加し、新規領域の id を返す(§13.2)。time はクリップローカル秒。 */
   addMosaicRegion: (clipId: string, time: number) => string | null;
@@ -352,6 +377,7 @@ export const useProjectStore = create<ProjectState>()(
               effects: [],
               text: null,
               mosaics: [],
+              transitionIn: null,
             };
             insertClipSorted(track.clips, clip);
             newId = id;
@@ -391,8 +417,10 @@ export const useProjectStore = create<ProjectState>()(
                 bold: false,
                 align: "center",
                 background: null,
+                ...DEFAULT_TEXT_STYLE_EXTRA,
               },
               mosaics: [],
+              transitionIn: null,
             };
             insertClipSorted(track.clips, clip);
             newId = id;
@@ -484,6 +512,8 @@ export const useProjectStore = create<ProjectState>()(
             // 右側クリップ: キーフレーム time はクリップローカル秒(§13.2)のため
             // -leftDuration シフトする。time<0 になったものもホールド動作が保たれるよう
             // そのまま残す(sampleRegion は先頭より前をホールドするので挙動は同じ)。
+            // transitionIn(§14.1)は左クリップのみ引き継ぎ、右は null にする
+            // (分割で生まれた新しい先頭には「入りのトランジション」の意味論が無いため)。
             const rightClip: Clip = {
               ...clip,
               id: crypto.randomUUID(),
@@ -498,6 +528,7 @@ export const useProjectStore = create<ProjectState>()(
                 ...r,
                 keyframes: r.keyframes.map((k) => ({ ...k, time: k.time - leftDuration })),
               })),
+              transitionIn: null,
             };
 
             track.clips.splice(index, 1, leftClip, rightClip);
@@ -567,6 +598,113 @@ export const useProjectStore = create<ProjectState>()(
             track.clips[index] = merged;
             return true;
           }),
+
+        detachAudio: (clipId) => {
+          let newClipId: string | null = null;
+          mutate((project) => {
+            const loc = findClipLocation(project, clipId);
+            if (!loc) return false;
+            const { track: sourceTrack, clip } = loc;
+            // 対象は hasAudio な video クリップのみ(テキスト/画像/音声クリップ/既にミュート済みは除く、§14.3)。
+            if (sourceTrack.kind !== "video" || sourceTrack.locked || clip.assetId === null || clip.muted) {
+              return false;
+            }
+            const asset = findAssetById(project, clip.assetId);
+            if (!asset || asset.kind !== "video" || !asset.hasAudio) return false;
+
+            // [start, start+duration] がまるごと空いている最初の(ロックされていない)audio トラックを探す。
+            let targetTrack =
+              project.audioTracks.find((t) => {
+                if (t.locked) return false;
+                return computeGaps(t.clips).some(
+                  (g) => clip.start >= g.start - EPS && clip.start + clip.duration <= g.end + EPS,
+                );
+              }) ?? null;
+
+            if (!targetTrack) {
+              targetTrack = makeTrack("audio", `A${project.audioTracks.length + 1}`);
+              project.audioTracks.push(targetTrack);
+            }
+
+            const newClip: Clip = {
+              id: crypto.randomUUID(),
+              assetId: clip.assetId,
+              start: clip.start,
+              duration: clip.duration,
+              inPoint: clip.inPoint,
+              speed: clip.speed,
+              volume: clip.volume,
+              muted: false,
+              opacity: 1,
+              transform: { x: 0, y: 0, scale: 1, rotation: 0 },
+              fadeIn: clip.fadeIn,
+              fadeOut: clip.fadeOut,
+              effects: [],
+              text: null,
+              mosaics: [],
+              transitionIn: null,
+            };
+            insertClipSorted(targetTrack.clips, newClip);
+            clip.muted = true;
+            newClipId = newClip.id;
+            return true;
+          });
+          if (newClipId) log.info("ui", `音声切り離し: clipId=${clipId} newClipId=${newClipId}`);
+          return newClipId;
+        },
+
+        importSrtCues: (cues) => {
+          let result: { trackId: string; count: number } | null = null;
+          mutate((project) => {
+            if (cues.length === 0) return false;
+            const track = makeTrack("video", `V${project.videoTracks.length + 1}`);
+            // start 昇順で 1 件ずつ配置し、重なるキューは既存クリップとの空き区間へクランプする(§14.2)。
+            const sorted = [...cues].sort((a, b) => a.start - b.start);
+            for (const cue of sorted) {
+              const duration = Math.max(MIN_DURATION, cue.end - cue.start);
+              const start = clampToNonOverlapping(track.clips, Math.max(0, cue.start), duration);
+              const clip: Clip = {
+                id: crypto.randomUUID(),
+                assetId: null,
+                start,
+                duration,
+                inPoint: 0,
+                speed: 1,
+                volume: 1,
+                muted: false,
+                opacity: 1,
+                // 既定スタイル(§14.2): transform.y = +settings.height*0.38。
+                transform: { x: 0, y: project.settings.height * 0.38, scale: 1, rotation: 0 },
+                fadeIn: 0,
+                fadeOut: 0,
+                effects: [],
+                text: {
+                  content: cue.text,
+                  fontFamily: "Meiryo",
+                  fontSize: 48,
+                  color: "#FFFFFF",
+                  bold: false,
+                  align: "center",
+                  background: null,
+                  outlineColor: "#000000",
+                  outlineWidth: 4,
+                  shadowColor: null,
+                  shadowX: 2,
+                  shadowY: 2,
+                  lineSpacing: 0,
+                },
+                mosaics: [],
+                transitionIn: null,
+              };
+              insertClipSorted(track.clips, clip);
+            }
+            // 新規トラックは最上位(最後尾 = 最上層、§4)に追加する。
+            project.videoTracks.push(track);
+            result = { trackId: track.id, count: track.clips.length };
+            return true;
+          });
+          return result;
+        },
 
         addMosaicRegion: (clipId, time) => {
           let newId: string | null = null;

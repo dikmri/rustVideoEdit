@@ -101,6 +101,27 @@
   "properties.mosaicEditInPreview": "プレビューで編集",
   "properties.mosaicShortcutHint": "Q/E: 回転 ∓5° / R: 回転リセット / K: キーフレーム追加 / H: 表示切替",
 
+  "properties.transitionIn": "トランジション(イン)",
+  "properties.transitionType": "種類",
+  "properties.transitionType.dissolve": "ディゾルブ",
+  "properties.transitionType.wipeleft": "ワイプ(左から)",
+  "properties.transitionType.wiperight": "ワイプ(右から)",
+  "properties.transitionType.wipeup": "ワイプ(上から)",
+  "properties.transitionType.wipedown": "ワイプ(下から)",
+  "properties.transitionType.slideleft": "スライド(右から)",
+  "properties.transitionType.slideright": "スライド(左から)",
+  "properties.transitionDuration": "長さ",
+
+  "properties.detachAudio": "音声を切り離す",
+
+  "properties.textOutline": "縁取り",
+  "properties.textOutlineNone": "縁取りなし",
+  "properties.textShadow": "影",
+  "properties.textShadowNone": "影なし",
+  "properties.textShadowX": "影X",
+  "properties.textShadowY": "影Y",
+  "properties.textLineSpacing": "行間",
+
   "timeline.toolbar.selectTool": "選択ツール (V)",
   "timeline.toolbar.razorTool": "レザーツール (C)",
   "timeline.toolbar.split": "再生ヘッドで分割 (Ctrl+K)",
@@ -113,6 +134,8 @@
   "timeline.toolbar.zoomFit": "全体表示",
   "timeline.toolbar.addVideoTrack": "動画トラックを追加",
   "timeline.toolbar.addAudioTrack": "音声トラックを追加",
+  "timeline.toolbar.importSrt": "SRT字幕を読み込み",
+  "timeline.toolbar.srtFilterName": "SRT字幕",
 
   "timeline.track.lock": "ロック",
   "timeline.track.unlock": "ロック解除",

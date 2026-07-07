@@ -38,6 +38,13 @@ export interface TextStyle {
   bold: boolean;
   align: "left" | "center" | "right";
   background: string | null; // #RRGGBB or null
+  // テキスト強化(DESIGN.md §14.2)。旧プロジェクトは既定値補完(normalizeProject)。
+  outlineColor: string | null; // #RRGGBB or null。既定 null(縁取りなし)
+  outlineWidth: number; // 0..20(ソース px)。既定 0
+  shadowColor: string | null; // #RRGGBB or null。既定 null(影なし)
+  shadowX: number; // -50..50。既定 2
+  shadowY: number; // -50..50。既定 2
+  lineSpacing: number; // 0..100(px)。既定 0
 }
 
 // モザイク(DESIGN.md §13.2)。video/image クリップのみ対象。
@@ -59,6 +66,17 @@ export interface MosaicRegion {
   keyframes: MosaicKeyframe[]; // time 昇順、常に 1 個以上
 }
 
+// トランジション種別(DESIGN.md §14.1)。video トラックのクリップのみ有効
+// (テキストクリップは dissolve のみ許可)。
+export type TransitionType =
+  | "dissolve"
+  | "wipeleft"
+  | "wiperight"
+  | "wipeup"
+  | "wipedown"
+  | "slideleft"
+  | "slideright";
+
 export interface Clip {
   id: string;
   assetId: string | null; // null = テキストクリップ(video トラックのみ)
@@ -75,6 +93,9 @@ export interface Clip {
   effects: Effect[];
   text: TextStyle | null; // テキストクリップのみ非 null
   mosaics: MosaicRegion[]; // video/image クリップのみ使用(§13.2)。旧プロジェクトは [] で補完
+  // クリップ先頭のトランジション(DESIGN.md §14.1)。duration: 0.1..3.0 秒かつ clip.duration 以下。
+  // 旧プロジェクトは null で補完。splitClip 時は左クリップのみ引き継ぎ、右は null になる。
+  transitionIn: { type: TransitionType; duration: number } | null;
 }
 
 export interface Track {
@@ -122,6 +143,10 @@ export interface VClip {
   assetH: number | null;
   isImage: boolean;
   mosaics: MosaicRegion[]; // §13.2。Rust 側が enabled/空 keyframes をフィルタする
+  // トランジション/延長関連(DESIGN.md §14.1, §14.4)。全フィールド Rust 側 serde default。
+  transitionIn: { type: TransitionType; duration: number } | null;
+  extendTail: number; // このクリップ自身を末尾に延長する出力秒数(次の隣接クリップの transitionIn.duration)
+  sourceTailAvail: number; // out 点より先に残っているソース素材の出力秒数。画像・テキストは 1e9
 }
 
 export interface AClip {

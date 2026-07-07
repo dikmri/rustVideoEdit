@@ -24,6 +24,11 @@ function sortedClips(track: Track): Clip[] {
   return [...track.clips].sort((a, b) => a.start - b.start);
 }
 
+/** 「隣接」とみなす許容誤差(秒、DESIGN §14.1: |A.end − B.start| < 0.001)。 */
+const ADJACENT_EPS = 0.001;
+/** 画像・テキストクリップの sourceTailAvail(DESIGN §14.1: 実質無制限)。 */
+const TAIL_AVAIL_UNLIMITED = 1e9;
+
 function assetOf(project: Project, assetId: string | null): MediaAsset | null {
   if (assetId === null) return null;
   return project.assets.find((a) => a.id === assetId) ?? null;
@@ -62,8 +67,23 @@ function buildInputs(project: Project): { inputs: ExportInput[]; indexOf: Map<st
 function buildVideoClips(project: Project, indexOf: Map<string, number>): VClip[] {
   const result: VClip[] = [];
   for (const track of project.videoTracks) {
-    for (const clip of sortedClips(track)) {
+    const clips = sortedClips(track);
+    clips.forEach((clip, i) => {
       const asset = assetOf(project, clip.assetId);
+
+      // extendTail(§14.1, §14.4): 同一トラック内で次のクリップが隣接し、かつそれが
+      // transitionIn を持つ場合、その duration ぶんこのクリップ自身を末尾に延長する。
+      const next = i < clips.length - 1 ? clips[i + 1] : null;
+      const isAdjacentToNext = next !== null && Math.abs(clip.start + clip.duration - next.start) < ADJACENT_EPS;
+      const extendTail = isAdjacentToNext && next.transitionIn ? next.transitionIn.duration : 0;
+
+      // sourceTailAvail(§14.1): out 点より先に残っているソース素材の出力秒数。画像・テキストは無制限。
+      const isImage = asset?.kind === "image";
+      const sourceTailAvail =
+        clip.assetId === null || isImage || !asset
+          ? TAIL_AVAIL_UNLIMITED
+          : Math.max(0, (asset.duration - (clip.inPoint + clip.duration * clip.speed)) / clip.speed);
+
       result.push({
         inputIndex: clip.assetId !== null ? (indexOf.get(clip.assetId) ?? null) : null,
         start: clip.start,
@@ -81,8 +101,12 @@ function buildVideoClips(project: Project, indexOf: Map<string, number>): VClip[
         isImage: asset?.kind === "image",
         // §13.2: 全 region をそのまま渡す(enabled=false や空 keyframes は Rust 側がフィルタ)。
         mosaics: clip.mosaics.map((r) => ({ ...r, keyframes: r.keyframes.map((k) => ({ ...k })) })),
+        // §14.1, §14.4: トランジション/延長情報を透過する(全フィールド Rust 側 serde default)。
+        transitionIn: clip.transitionIn ? { ...clip.transitionIn } : null,
+        extendTail,
+        sourceTailAvail,
       });
-    }
+    });
   }
   return result;
 }
