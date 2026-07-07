@@ -55,7 +55,10 @@ bun tauri build    # リリースビルド
 
 1. `src-tauri/tauri.conf.json` と `package.json` の version を上げる
 2. `git tag vX.Y.Z && git push origin vX.Y.Z`
-3. GitHub Actions が全プラットフォームのビルドと Release 作成、`latest.json`(自動更新用)の生成まで行います
+3. `gh release create vX.Y.Z --title "SOBA Video Editor vX.Y.Z" --notes "..." --verify-tag`
+   (GITHUB_TOKEN による Release 作成が 403 になる事象があるため、Release はローカルで事前作成する。
+   CI は既存 Release へのビルド成果物アップロードと `latest.json` 生成を行う)
+4. GitHub Actions が全プラットフォームのビルドとアセット添付、`latest.json`(自動更新用)の生成まで行います
 
 ## ライセンス
 
