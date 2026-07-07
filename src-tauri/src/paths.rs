@@ -69,6 +69,13 @@ pub fn thumbs_dir() -> PathBuf {
     dir
 }
 
+/// runtime/cache/waves(音声波形 JSON キャッシュ、DESIGN.md §14.3)
+pub fn waves_dir() -> PathBuf {
+    let dir = cache_dir().join("waves");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
 /// runtime/settings.json
 pub fn settings_path() -> PathBuf {
     runtime_dir().join("settings.json")

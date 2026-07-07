@@ -40,7 +40,12 @@ pub enum TextAlign {
     Right,
 }
 
-/// `src/types/model.ts` の `TextStyle` に対応。
+fn default_shadow_offset() -> f64 {
+    2.0
+}
+
+/// `src/types/model.ts` の `TextStyle` に対応(DESIGN.md §14.2 で拡張)。
+/// 縁取り/影/行間は後方互換のため全フィールドに `#[serde(default)]` を付与する。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextStyle {
@@ -51,6 +56,24 @@ pub struct TextStyle {
     pub bold: bool,
     pub align: TextAlign,
     pub background: Option<String>,
+    /// 縁取り色(既定 null = 縁取りなし)。
+    #[serde(default)]
+    pub outline_color: Option<String>,
+    /// 縁取り太さ(0..20 ソース px、既定 0)。
+    #[serde(default)]
+    pub outline_width: f64,
+    /// 影色(既定 null = 影なし)。
+    #[serde(default)]
+    pub shadow_color: Option<String>,
+    /// 影オフセット X(-50..50、既定 2)。
+    #[serde(default = "default_shadow_offset")]
+    pub shadow_x: f64,
+    /// 影オフセット Y(-50..50、既定 2)。
+    #[serde(default = "default_shadow_offset")]
+    pub shadow_y: f64,
+    /// 行間(0..100 px、既定 0)。
+    #[serde(default)]
+    pub line_spacing: f64,
 }
 
 fn default_true() -> bool {
@@ -106,7 +129,29 @@ pub struct MosaicRegion {
     pub keyframes: Vec<MosaicKeyframe>,
 }
 
-/// DESIGN.md §5 の `VClip`。
+/// `src/types/model.ts` の `TransitionType` に対応(DESIGN.md §14.1)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TransitionType {
+    Dissolve,
+    Wipeleft,
+    Wiperight,
+    Wipeup,
+    Wipedown,
+    Slideleft,
+    Slideright,
+}
+
+/// `Clip.transitionIn` に対応(DESIGN.md §14.1)。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransitionIn {
+    #[serde(rename = "type")]
+    pub kind: TransitionType,
+    pub duration: f64,
+}
+
+/// DESIGN.md §5 の `VClip`(§14.1 でトランジション関連フィールドを追加)。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VClip {
@@ -127,6 +172,15 @@ pub struct VClip {
     /// モザイク領域(DESIGN.md §13.2)。旧フロントからの spec には無いため default。
     #[serde(default)]
     pub mosaics: Vec<MosaicRegion>,
+    /// このクリップの先頭で行うトランジション(DESIGN.md §14.1)。旧 spec には無いため default。
+    #[serde(default)]
+    pub transition_in: Option<TransitionIn>,
+    /// このクリップ自身を末尾に延長する出力秒数(次の隣接クリップの transitionIn 用)。
+    #[serde(default)]
+    pub extend_tail: f64,
+    /// out 点より先に残っているソース素材の出力秒数(画像・テキストは 1e9)。
+    #[serde(default)]
+    pub source_tail_avail: f64,
 }
 
 /// DESIGN.md §5 の `AClip`。

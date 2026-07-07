@@ -24,6 +24,7 @@ pub fn run() {
             commands::media::check_ffmpeg,
             commands::media::probe_media,
             commands::media::generate_thumbnail,
+            commands::media::generate_waveform,
             commands::media::list_system_fonts,
             commands::project::save_project,
             commands::project::load_project,

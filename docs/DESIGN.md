@@ -514,3 +514,109 @@ video アセットのタイルに pointer が乗ったら、サムネイル `<im
 
 - 新規 UI 文字列は 7 言語すべてに追加(キー欠落禁止)。新規操作はすべて logger 記録
 - バージョン 0.2.0(tauri.conf.json / package.json)
+
+---
+
+## 14. v0.4.0 機能追加(トランジション/テキスト強化/オーディオ)
+
+### 14.1 トランジション(クリップ入りトランジション方式)
+
+`Clip` に追加(video トラックのクリップのみ。テキストクリップは dissolve のみ許可):
+
+```ts
+export type TransitionType =
+  | 'dissolve' | 'wipeleft' | 'wiperight' | 'wipeup' | 'wipedown' | 'slideleft' | 'slideright';
+interface Clip { /* 既存 */ transitionIn: { type: TransitionType; duration: number } | null; }
+// duration: 0.1..3.0 秒、かつ clip.duration 以下に UI でクランプ。旧プロジェクトは null 補完
+```
+
+意味論: クリップ B の**先頭 d 秒**で B が出現するアニメーション。同一トラックの直前クリップ A が
+隣接(|A.end − B.start| < 0.001)している場合、A は窓 [B.start, B.start+d] の間も下に表示され続ける
+(=クロストランジション)。先行クリップが無い/隣接しない場合は下層レイヤー(または黒)からの出現。
+
+**書き出し(filtergraph.rs)**:
+- ExportSpec の VClip に追加: `transitionIn: { type, duration } | null`、
+  `extendTail: f64`(このクリップ自身を末尾に延長する出力秒数。フロントが「次の隣接クリップが
+  transitionIn を持つ」場合にその duration を設定、それ以外 0)、
+  `sourceTailAvail: f64`(out 点より先に残っているソース素材の出力秒数 = (asset.duration − outPoint)/speed。
+  画像・テキストは 1e9 を渡す)。全フィールド serde default
+- A 側(extendTail > 0): 実素材を優先して延長する。real = min(extendTail, sourceTailAvail) とし
+  trim の end を real*speed 秒ぶん延長、残り (extendTail − real) > 0 は
+  `tpad=stop_mode=clone:stop_duration={残り}` で最終フレームを複製延長。
+  fade-out(alpha)の st はローカル (duration + extendTail − fadeOut) ではなく**従来通り duration 基準のまま**
+  (トランジション窓中に A が消えないよう、ユーザー fadeOut と extendTail が同時指定された場合のみ
+  fadeOut を優先し extendTail を無視してよい)。overlay の enable 終端を extendTail ぶん延長
+- B 側(transitionIn 非 null、ローカル時間 0..d):
+  - チェーン順を変更: `trim → setpts → fps → [モザイク] → format=yuva420p → [トランジション用 alphamerge]
+    → scale → rotate → eq → gblur → colorchannelmixer → fade → setpts=PTS+start/TB`
+    (format を scale の**前**へ移動。scale/rotate/eq/gblur/fade は alpha プレーンを保持する)
+  - dissolve: `fade=t=in:st=0:d={d}:alpha=1` を追加(ユーザー fadeIn とは独立に併記してよい)
+  - wipe 系: モザイクと同じ 1/4 解像度 geq マスク+alphamerge を再利用。マスク式(W/H はソース解像度、
+    p = clip(T/{d},0,1)。T>d では全面 255):
+    wipeleft `255*lte(X*4, W*p)` / wiperight `255*gte(X*4, W*(1-p))` /
+    wipeup `255*lte(Y*4, H*p)` / wipedown `255*gte(Y*4, H*(1-p))`
+    ※「wipeleft = 左から右へ表示領域が広がる」と定義
+  - slide 系: B の最終 overlay を `eval=frame` とし、x(または y)式を
+    `if(lt(t,{start}+{d}), {baseX} + {±projW}*(1-(t-{start})/{d}), {baseX})` で移動
+    (slideleft = 右から入って定位置へ、slideright = 左から。y は wipe と同じ定義で不要——x 系のみ)。
+    slide が無いクリップは従来通り eval=init
+  - テキストクリップ: dissolve のみ。drawtext に `alpha='if(lt(t,{start}+{d}),(t-{start})/{d},1)'` を追加
+- **実装後、P5 と同様に ffmpeg 実機スモークテスト必須**(dissolve/wipeleft/slideleft の 3 種で
+  フレーム抽出し目視確認)
+
+**プレビュー(PlaybackEngine)**:
+- 各 video トラックに「送出用(outgoing)」のサブレイヤーを 1 つ追加(既存レイヤーの複製構成、z は primary の下)。
+  playhead が B のトランジション窓内かつ隣接する前クリップ A が存在する場合、outgoing に A を表示
+  (expected time は A の式のまま。ソース末尾を超えた場合は video 要素が最終フレームで止まるのに任せる)。
+  窓外では outgoing を hidden+pause
+- B 側の進行度 p = (playhead − B.start)/d(0..1)で:
+  dissolve → B の opacity に p を乗算 / wipe → B の wrapper に `clip-path: inset(...)`(方向に応じ
+  右/左/下/上を (1−p)*100% だけ切る。窓外では clip-path 除去)/ slide → B の transform の translate に
+  `±stageW*(1−p)` を加算
+- モザイク canvas は wrapper 内にあるため clip-path/transform は自動追従する
+
+**UI**: PropertiesPanel に「トランジション(イン)」セクション(video/image/テキストクリップ選択時):
+種類ドロップダウン(なし+7種、テキストは dissolve のみ)+長さ DragNumber。
+ClipView 左上に小さな三角バッジ(トランジションあり時)。i18n 必須。
+
+### 14.2 テキスト強化+SRT 読み込み
+
+`TextStyle` に追加(旧プロジェクトは既定値補完): `outlineColor: string | null`(既定 null)、
+`outlineWidth: number`(0..20 ソースpx、既定 0)、`shadowColor: string | null`(既定 null)、
+`shadowX: number`(−50..50、既定 2)、`shadowY: number`(同)、`lineSpacing: number`(0..100 px、既定 0)。
+
+- 書き出し(drawtext): `bordercolor={c}:borderw={w}`(outline 時)、`shadowcolor={c}:shadowx={x}:shadowy={y}`
+  (shadow 時)、`line_spacing={n}`。複数行は content 内の改行がそのまま反映される
+- プレビュー: CSS `-webkit-text-stroke: {w}px {c}`(近似)+ `text-shadow: {x}px {y}px 0 {c}` + `line-height`
+- PropertiesPanel のテキスト編集に縁取り(色+太さ)/影(色+XY)/行間 を追加
+- **SRT 読み込み**: TimelineToolbar にボタン追加。plugin-dialog で .srt を選択 → フロントでパース
+  (`\d+ → HH:MM:SS,mmm --> HH:MM:SS,mmm → テキスト行(複数行可)` の素朴なパーサ。BOM/CRLF 許容、
+  不正キューはスキップして logger.warn)→ 新しい video トラックを最上位に追加し、各キューを
+  テキストクリップとして配置(既定スタイル: fontSize 48、color #FFFFFF、outline 黒 4px、align center、
+  transform.y = +settings.height*0.38、重なるキューは start を clampToNonOverlapping)。結果件数を logger 記録
+
+### 14.3 オーディオ波形+音声切り離し
+
+- **Rust**: `generate_waveform(assetId: string, path: string) -> string`(生成 JSON の絶対パス)。
+  ffmpeg で `-map a:0 -ac 1 -ar 8000 -f s16le -` を stdout に吐かせ、Rust で全サンプルを 2000 バケットに
+  集約(各バケットの max |s| を 0..100 の u8 に正規化)。
+  `runtime/cache/waves/{assetId}.json` へ `{ "version": 1, "durationSec": <f64>, "peaks": [<u8>...] }` を保存。
+  既存ファイルがあればスキップ。音声ストリームが無い場合はエラーではなく peaks 空配列の JSON を返す
+- **フロント**: 取込完了後に非同期で generate_waveform を発火(video で hasAudio のものと audio)。
+  波形 JSON は convertFileSrc + fetch で読み、assetId→peaks の Map にキャッシュ。
+  audio トラックの ClipView に canvas で描画: クリップの表示範囲 [inPoint, inPoint+duration*speed] を
+  ソース時間→バケットへ写像し、上下対称の縦線群で描画(色はテキスト色の 40% 透明度等、トークン基準)。
+  トリム/ズームに追従。未生成時は従来表示のまま
+- **音声切り離し**: projectStore に `detachAudio(clipId)`。video クリップ(hasAudio、テキスト除く)を対象に、
+  同じ assetId/start/duration/inPoint/speed/volume/fadeIn/fadeOut の audio クリップを
+  「[start, start+duration] が空いている最初の audio トラック」へ追加(全トラックで塞がっていれば
+  audio トラックを新規追加して配置)。元 video クリップは muted=true に変更。1 回の undo で戻せるよう
+  単一 mutate で実行。PropertiesPanel(video クリップ選択時)に「音声を切り離す」ボタン
+
+### 14.4 その他
+
+- exportSpec.ts: 新フィールド(transitionIn/extendTail/sourceTailAvail、TextStyle 拡張)を透過。
+  extendTail の算出はトラック内で「次のクリップが隣接かつ transitionIn を持つか」で決める
+- normalizeProject: transitionIn null 補完、TextStyle 新フィールド既定値補完
+- 新規 UI 文字列は 7 言語すべて追加。新規操作はすべて logger 記録
+- バージョン 0.4.0

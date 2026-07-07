@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use crate::commands::export::{
-    AClip, Effect, ExportSpec, MosaicRegion, TextAlign, TextStyle, VClip,
+    AClip, Effect, ExportSpec, MosaicRegion, TextAlign, TextStyle, TransitionType, VClip,
 };
 use crate::paths;
 
@@ -84,14 +84,48 @@ fn first_blur(effects: &[Effect]) -> Option<f64> {
     })
 }
 
-/// メディアクリップのチェーン(DESIGN.md §13.2 で再構成)。
+/// A側延長(DESIGN.md §14.1)を考慮した実効 extendTail。
+/// ユーザー fadeOut と extendTail が同時指定された場合はトランジション窓中に A が
+/// 消えないよう fadeOut を優先し extendTail を無視する。
+fn effective_extend_tail(vc: &VClip) -> f64 {
+    if vc.fade_out > 0.0 {
+        0.0
+    } else {
+        vc.extend_tail.max(0.0)
+    }
+}
+
+/// トランジション(B側)の実効 duration。0 以下や `transitionIn` が無い場合は None。
+/// クリップの duration を超えないようクランプする(UI 側でもクランプされる前提だが防御的に)。
+fn transition_duration(vc: &VClip) -> Option<f64> {
+    let t = vc.transition_in.as_ref()?;
+    let d = t.duration.min(vc.duration.max(0.0));
+    if d > 1e-6 {
+        Some(d)
+    } else {
+        None
+    }
+}
+
+/// ソース解像度(assetW/assetH)を整数ピクセルで返す。不明な場合は None
+/// (モザイク・トランジション wipe マスクのどちらもソース解像度が要る)。
+fn asset_pixel_size(vc: &VClip) -> Option<(u32, u32)> {
+    match (vc.asset_w, vc.asset_h) {
+        (Some(w), Some(h)) if w >= 1.0 && h >= 1.0 => Some((w.round() as u32, h.round() as u32)),
+        _ => None,
+    }
+}
+
+/// メディアクリップのチェーン(DESIGN.md §13.2 で再構成、§14.1 でさらに拡張)。
 ///
-/// クリップローカル時間(0..duration)で処理し、最後に `setpts=PTS+start/TB` で
-/// タイムライン位置へシフトする:
-/// `trim → setpts(ローカル化+speed) → fps → [モザイク] → scale → format → rotate →
-///  eq → gblur → colorchannelmixer → fade(st はローカル) → setpts=PTS+start/TB`
+/// クリップローカル時間(0..duration(+extendTail))で処理し、最後に
+/// `setpts=PTS+start/TB` でタイムライン位置へシフトする:
+/// `trim(A側延長込) → setpts(ローカル化+speed) → fps → [tpad(A側延長の残り)] →
+///  [モザイク] → format=yuva420p → [トランジション wipe マスク] → scale → rotate →
+///  eq → gblur → colorchannelmixer → fade(dissolve 込・st はローカル) →
+///  setpts=PTS+start/TB`
 ///
-/// これによりモザイクの geq 内時間変数 `T` がキーフレーム time と直接一致する。
+/// これによりモザイク/トランジションの時間変数 `T`/`t` がクリップローカル時間と直接一致する。
 fn build_media_clip_chain(
     vc: &VClip,
     clip_idx: usize,
@@ -99,15 +133,24 @@ fn build_media_clip_chain(
     label: &str,
     fps: f64,
 ) -> String {
-    // 前段: 入力をクリップローカル時間へ正規化する。
+    let extend_tail = effective_extend_tail(vc);
+    // 実素材を優先して延長する: real = min(extendTail, sourceTailAvail)。
+    let real_extend = extend_tail.min(vc.source_tail_avail.max(0.0)).max(0.0);
+    // 実素材で埋め切れない残りは tpad=stop_mode=clone で最終フレームを複製延長する。
+    let clone_extend = (extend_tail - real_extend).max(0.0);
+    // モザイク/トランジションマスクの合成用ソースが途中で尽きないよう、
+    // クリップローカルの総尺(延長込み)を渡す。
+    let local_duration = vc.duration + extend_tail;
+
+    // 前段: 入力をクリップローカル時間へ正規化する(A側延長: 実素材優先)。
     let mut pre: Vec<String> = Vec::new();
 
     if vc.is_image {
         // 画像: inPoint=0, speed=1 前提。trim=duration で必要な長さに切り出す。
-        pre.push(format!("trim=duration={:.6}", vc.duration));
+        pre.push(format!("trim=duration={:.6}", vc.duration + real_extend));
         pre.push("setpts=PTS-STARTPTS".to_string());
     } else {
-        let out_point = vc.in_point + vc.duration * vc.speed;
+        let out_point = vc.in_point + (vc.duration + real_extend) * vc.speed;
         pre.push(format!(
             "trim=start={:.6}:end={:.6}",
             vc.in_point, out_point
@@ -117,11 +160,45 @@ fn build_media_clip_chain(
 
     pre.push(format!("fps={fps:.6}"));
 
-    // 後段: モザイク適用後の変形・エフェクト・フェード。最後にタイムラインへシフト。
+    if clone_extend > 1e-9 {
+        pre.push(format!(
+            "tpad=stop_mode=clone:stop_duration={:.6}",
+            clone_extend
+        ));
+    }
+
+    let mut script = String::new();
+    let pre_label = format!("v{clip_idx}p");
+    script.push_str(&format!(
+        "[{input_idx}:v] {} [{pre_label}];\n",
+        pre.join(", ")
+    ));
+    let mut cur = pre_label;
+
+    if let Some((mosaic_script, mosaic_label)) =
+        build_mosaic_stages(vc, clip_idx, fps, local_duration)
+    {
+        script.push_str(&mosaic_script);
+        cur = mosaic_label;
+    }
+
+    // v0.4.0: format を scale の前へ移動(alpha プレーンを維持したままトランジション用
+    // マスクを適用するため。scale/rotate/eq/gblur/fade は alpha プレーンを保持する)。
+    let fmt_label = format!("v{clip_idx}fmt");
+    script.push_str(&format!("[{cur}] format=yuva420p [{fmt_label}];\n"));
+    cur = fmt_label;
+
+    if let Some((wipe_script, wipe_label)) =
+        build_transition_wipe_stage(vc, clip_idx, fps, local_duration, &cur)
+    {
+        script.push_str(&wipe_script);
+        cur = wipe_label;
+    }
+
+    // 後段: 変形・エフェクト・フェード。最後にタイムラインへシフト。
     let mut post: Vec<String> = Vec::new();
 
     post.push(format!("scale=w=iw*{0:.6}:h=ih*{0:.6}", vc.transform.scale));
-    post.push("format=yuva420p".to_string());
 
     if vc.transform.rotation.abs() > f64::EPSILON {
         let r = vc.transform.rotation;
@@ -147,6 +224,11 @@ fn build_media_clip_chain(
     if vc.fade_in > 0.0 {
         post.push(format!("fade=t=in:st=0:d={:.6}:alpha=1", vc.fade_in));
     }
+    if let (Some(t), Some(d)) = (&vc.transition_in, transition_duration(vc)) {
+        if matches!(t.kind, TransitionType::Dissolve) {
+            post.push(format!("fade=t=in:st=0:d={d:.6}:alpha=1"));
+        }
+    }
     if vc.fade_out > 0.0 {
         let st = (vc.duration - vc.fade_out).max(0.0);
         post.push(format!(
@@ -157,19 +239,64 @@ fn build_media_clip_chain(
 
     post.push(format!("setpts=PTS+{:.6}/TB", vc.start));
 
-    match build_mosaic_stages(vc, clip_idx, fps) {
-        None => format!(
-            "[{input_idx}:v] {}, {} [{label}];\n",
-            pre.join(", "),
-            post.join(", ")
-        ),
-        Some((stages, last_label)) => {
-            let mut s = format!("[{input_idx}:v] {} [v{clip_idx}p];\n", pre.join(", "));
-            s.push_str(&stages);
-            s.push_str(&format!("[{last_label}] {} [{label}];\n", post.join(", ")));
-            s
-        }
+    script.push_str(&format!("[{cur}] {} [{label}];\n", post.join(", ")));
+    script
+}
+
+/// トランジション(B側)wipe 系のマスク段(DESIGN.md §14.1)。
+///
+/// 入力ラベル `in_label`(`format=yuva420p` 適用済・ソース解像度)に対し、モザイクと同じ
+/// 1/4 解像度 geq マスク + alphamerge で全面の alpha を書き換える。dissolve/slide/なし、
+/// またはソース解像度不明の場合は None。
+///
+/// マスク式(W/H はソース解像度、p = clip(T/d,0,1)。T>d では p=1 となり全面 255):
+/// wipeleft `255*lte(X*4, W*p)` / wiperight `255*gte(X*4, W*(1-p))` /
+/// wipeup `255*lte(Y*4, H*p)` / wipedown `255*gte(Y*4, H*(1-p))`
+/// (「wipeleft = 左から右へ表示領域が広がる」の定義)。
+fn build_transition_wipe_stage(
+    vc: &VClip,
+    clip_idx: usize,
+    fps: f64,
+    local_duration: f64,
+    in_label: &str,
+) -> Option<(String, String)> {
+    let t = vc.transition_in.as_ref()?;
+    if !matches!(
+        t.kind,
+        TransitionType::Wipeleft
+            | TransitionType::Wiperight
+            | TransitionType::Wipeup
+            | TransitionType::Wipedown
+    ) {
+        return None;
     }
+    let d = transition_duration(vc)?;
+    let (w, h) = asset_pixel_size(vc)?;
+    let mask_w = w.div_ceil(4);
+    let mask_h = h.div_ceil(4);
+
+    let p = format!("clip(T/({}),0,1)", fmt_num(d));
+    let expr = match t.kind {
+        TransitionType::Wipeleft => format!("255*lte(X*4,{w}*({p}))"),
+        TransitionType::Wiperight => format!("255*gte(X*4,{w}*(1-({p})))"),
+        TransitionType::Wipeup => format!("255*lte(Y*4,{h}*({p}))"),
+        TransitionType::Wipedown => format!("255*gte(Y*4,{h}*(1-({p})))"),
+        _ => unreachable!("直前の matches! で wipe 系に限定済み"),
+    };
+
+    let p_label = format!("v{clip_idx}tin");
+    let mut script = String::new();
+    script.push_str(&format!(
+        "color=c=black:s={mask_w}x{mask_h}:r={fps:.6}:d={local_duration:.6}[{p_label}mb];\n"
+    ));
+    script.push_str(&format!(
+        "[{p_label}mb]geq=lum='{expr}':cb=128:cr=128,format=gray,scale={w}:{h}[{p_label}mask];\n"
+    ));
+    script.push_str(&format!(
+        "[{in_label}][{p_label}mask]alphamerge[{p_label}out];\n"
+    ));
+
+    Some((script, format!("{p_label}out")))
 }
 
 /// モザイク領域のフィルタ段(DESIGN.md §13.2)を構築する。
@@ -188,7 +315,12 @@ fn build_media_clip_chain(
 /// ```
 /// マスクは 1/4 解像度で生成し(性能対策)、geq 内で X/Y を 4 倍してフル解像度の
 /// ソース座標に換算する。時間変数は `T`(クリップローカル秒)。
-fn build_mosaic_stages(vc: &VClip, clip_idx: usize, fps: f64) -> Option<(String, String)> {
+fn build_mosaic_stages(
+    vc: &VClip,
+    clip_idx: usize,
+    fps: f64,
+    local_duration: f64,
+) -> Option<(String, String)> {
     let regions: Vec<&MosaicRegion> = vc
         .mosaics
         .iter()
@@ -199,10 +331,7 @@ fn build_mosaic_stages(vc: &VClip, clip_idx: usize, fps: f64) -> Option<(String,
     }
 
     // W/H はソース解像度(assetW/assetH)。不明な場合はモザイクをスキップする。
-    let (w, h) = match (vc.asset_w, vc.asset_h) {
-        (Some(w), Some(h)) if w >= 1.0 && h >= 1.0 => (w.round() as u32, h.round() as u32),
-        _ => return None,
-    };
+    let (w, h) = asset_pixel_size(vc)?;
     let mask_w = w.div_ceil(4);
     let mask_h = h.div_ceil(4);
 
@@ -243,8 +372,7 @@ fn build_mosaic_stages(vc: &VClip, clip_idx: usize, fps: f64) -> Option<(String,
             bs = fmt_num(bs)
         ));
         script.push_str(&format!(
-            "color=c=black:s={mask_w}x{mask_h}:r={fps:.6}:d={:.6}[{p}mb];\n",
-            vc.duration
+            "color=c=black:s={mask_w}x{mask_h}:r={fps:.6}:d={local_duration:.6}[{p}mb];\n"
         ));
         script.push_str(&format!(
             "[{p}mb]geq=lum='{geq}':cb=128:cr=128,format=gray,scale={w}:{h}[{p}mask];\n"
@@ -326,12 +454,39 @@ fn step_expr(kfs: &[(f64, f64)]) -> String {
     }
 }
 
+/// overlay 合成(DESIGN.md §14.1 で slide 系トランジション・A側延長に対応)。
+///
+/// - overlay の enable 終端は A側延長(extendTail)ぶん延ばす。
+/// - slideleft/slideright の場合のみ `eval=frame` にして x 式を
+///   `if(lt(t,start+d), baseX ± W*(1-(t-start)/d), baseX)` でアニメーションさせる
+///   (slideleft = 右から入って定位置へ、slideright = 左から。それ以外は従来通り `eval=init`)。
 fn build_overlay(prev: &str, vlabel: &str, vc: &VClip, out_label: &str) -> String {
-    let end = vc.start + vc.duration;
-    format!(
-        "[{prev}][{vlabel}] overlay=x=(W-w)/2+{:.6}:y=(H-h)/2+{:.6}:eval=init:enable='between(t,{:.6},{:.6})' [{out_label}];\n",
-        vc.transform.x, vc.transform.y, vc.start, end
-    )
+    let end = vc.start + vc.duration + effective_extend_tail(vc);
+    let base_x = format!("(W-w)/2+{:.6}", vc.transform.x);
+    let base_y = format!("(H-h)/2+{:.6}", vc.transform.y);
+
+    let slide_op = vc.transition_in.as_ref().and_then(|t| match t.kind {
+        TransitionType::Slideleft => Some("+"),
+        TransitionType::Slideright => Some("-"),
+        _ => None,
+    });
+
+    match (slide_op, transition_duration(vc)) {
+        (Some(op), Some(d)) => {
+            let x_expr = format!(
+                "if(lt(t,{s:.6}+{d:.6}),({base_x}){op}((W)*(1-(t-({s:.6}))/({d:.6}))),({base_x}))",
+                s = vc.start
+            );
+            format!(
+                "[{prev}][{vlabel}] overlay=x='{x_expr}':y={base_y}:eval=frame:enable='between(t,{:.6},{:.6})' [{out_label}];\n",
+                vc.start, end
+            )
+        }
+        _ => format!(
+            "[{prev}][{vlabel}] overlay=x={base_x}:y={base_y}:eval=init:enable='between(t,{:.6},{:.6})' [{out_label}];\n",
+            vc.start, end
+        ),
+    }
 }
 
 /// テキストのエスケープ(DESIGN.md §8: `\ ' : % ,` を適切に)。
@@ -409,6 +564,28 @@ fn build_drawtext_chain(vc: &VClip, prev: &str, out_label: &str) -> String {
         params.push(format!("boxcolor={bg}@0.6"));
     }
 
+    // 縁取り・影・行間(DESIGN.md §14.2)。
+    if let Some(oc) = &text.outline_color {
+        params.push(format!("bordercolor={oc}"));
+        params.push(format!("borderw={:.6}", text.outline_width));
+    }
+    if let Some(sc) = &text.shadow_color {
+        params.push(format!("shadowcolor={sc}"));
+        params.push(format!("shadowx={:.6}", text.shadow_x));
+        params.push(format!("shadowy={:.6}", text.shadow_y));
+    }
+    params.push(format!("line_spacing={:.6}", text.line_spacing));
+
+    // トランジション(DESIGN.md §14.1): テキストクリップは dissolve のみ許可。
+    if let (Some(t), Some(d)) = (&vc.transition_in, transition_duration(vc)) {
+        if matches!(t.kind, TransitionType::Dissolve) {
+            params.push(format!(
+                "alpha='if(lt(t,{s:.6}+{d:.6}),(t-({s:.6}))/({d:.6}),1)'",
+                s = vc.start
+            ));
+        }
+    }
+
     params.push(format!("enable='between(t,{:.6},{:.6})'", vc.start, end));
 
     format!("[{prev}] drawtext={} [{out_label}];\n", params.join(":"))
@@ -470,7 +647,8 @@ fn build_audio_chain(ac: &AClip, label: &str, sample_rate: u32) -> String {
 mod tests {
     use super::*;
     use crate::commands::export::{
-        AClip, ClipTransform, ExportInput, MosaicKeyframe, MosaicRegion, VideoCodec,
+        AClip, ClipTransform, ExportInput, MosaicKeyframe, MosaicRegion, TextAlign, TextStyle,
+        TransitionIn, TransitionType, VideoCodec,
     };
     use crate::ffmpeg::probe::AssetKind;
 
@@ -508,6 +686,27 @@ mod tests {
             asset_h: Some(360.0),
             is_image: false,
             mosaics: vec![],
+            transition_in: None,
+            extend_tail: 0.0,
+            source_tail_avail: 0.0,
+        }
+    }
+
+    fn make_text_style() -> TextStyle {
+        TextStyle {
+            content: "hello".to_string(),
+            font_family: "Meiryo".to_string(),
+            font_size: 48.0,
+            color: "#FFFFFF".to_string(),
+            bold: false,
+            align: TextAlign::Center,
+            background: None,
+            outline_color: None,
+            outline_width: 0.0,
+            shadow_color: None,
+            shadow_x: 2.0,
+            shadow_y: 2.0,
+            line_spacing: 0.0,
         }
     }
 
@@ -627,8 +826,10 @@ mod tests {
         assert!(script.contains(":cb=128:cr=128,format=gray,scale=640:360[v0m0mask];"));
         assert!(script.contains("[v0m0pix][v0m0mask]alphamerge[v0m0pixa];"));
         assert!(script.contains("[v0m0o][v0m0pixa]overlay=0:0[v0m0out];"));
-        // モザイク後に scale 以降の後段が続き、最後に [v0] へ。
-        assert!(script.contains("[v0m0out] scale=w=iw*1.000000:h=ih*1.000000, format=yuva420p"));
+        // モザイク後は format=yuva420p を明示ステージ(v0.4.0: format を scale の前へ)。
+        assert!(script.contains("[v0m0out] format=yuva420p [v0fmt];"));
+        // トランジションが無いためマスク段は挟まず、そのまま scale 以降の後段が続き [v0] へ。
+        assert!(script.contains("[v0fmt] scale=w=iw*1.000000:h=ih*1.000000"));
         assert!(script.contains("setpts=PTS+0.000000/TB [v0];"));
 
         // geq 式: X/Y の 4 倍換算、回転(度→ラジアン)、区分線形 cx、visible ステップ。
@@ -687,7 +888,186 @@ mod tests {
         assert!(script.contains("[v0p]split[v0m0o][v0m0x];"));
         assert!(script.contains("[v0m0out]split[v0m1o][v0m1x];"));
         assert!(script.contains("[v0m1x]scale=ceil(iw/8):ceil(ih/8)"));
-        assert!(script.contains("[v0m1out] scale=w=iw*"));
+        assert!(script.contains("[v0m1out] format=yuva420p [v0fmt];"));
+        assert!(script.contains("[v0fmt] scale=w=iw*"));
+    }
+
+    #[test]
+    fn extend_tail_uses_real_material_then_tpad_clone() {
+        // duration=2.0, extendTail=1.0, sourceTailAvail=0.4
+        // → real=0.4(trim end 延長)、残り 0.6 は tpad=stop_mode=clone で延長。
+        let mut vc = make_vclip();
+        vc.start = 3.0;
+        vc.duration = 2.0;
+        vc.fade_out = 0.0; // fadeOut と同時指定でないことを明示。
+        vc.extend_tail = 1.0;
+        vc.source_tail_avail = 0.4;
+
+        let chain = build_media_clip_chain(&vc, 0, 0, "v0", 30.0);
+        // trim end が real(0.4) ぶん延長される: in_point(0)+(duration+real)*speed = 2.4。
+        assert!(chain.contains("trim=start=0.000000:end=2.400000"));
+        // 残り(1.0-0.4=0.6)は tpad=stop_mode=clone で延長。
+        assert!(chain.contains("tpad=stop_mode=clone:stop_duration=0.600000"));
+
+        let mut spec = make_mosaic_spec();
+        spec.video_clips = vec![vc];
+        spec.video_clips[0].mosaics.clear();
+        let script = build_filter_complex(&spec);
+        // overlay の enable 終端が extendTail(1.0)ぶん延びる: start+duration+extendTail=6.0。
+        assert!(script.contains("enable='between(t,3.000000,6.000000)'"));
+    }
+
+    #[test]
+    fn extend_tail_ignored_when_fade_out_is_set() {
+        // ユーザー fadeOut と extendTail が同時指定された場合は fadeOut を優先し extendTail を無視する。
+        let mut vc = make_vclip();
+        vc.start = 3.0;
+        vc.duration = 2.0;
+        vc.fade_out = 0.5;
+        vc.extend_tail = 1.0;
+        vc.source_tail_avail = 0.4;
+
+        let chain = build_media_clip_chain(&vc, 0, 0, "v0", 30.0);
+        // 延長が無視されるため trim end は従来通り(2.0)。
+        assert!(chain.contains("trim=start=0.000000:end=2.000000"));
+        assert!(!chain.contains("tpad"));
+        // fade-out の st は従来通り duration 基準(2.0-0.5=1.5)。
+        assert!(chain.contains("fade=t=out:st=1.500000:d=0.500000:alpha=1"));
+
+        let mut spec = make_mosaic_spec();
+        spec.video_clips = vec![vc];
+        spec.video_clips[0].mosaics.clear();
+        let script = build_filter_complex(&spec);
+        // overlay の enable 終端も延長されない(start+duration=5.0)。
+        assert!(script.contains("enable='between(t,3.000000,5.000000)'"));
+    }
+
+    #[test]
+    fn wipeleft_mask_expr_and_chain_order() {
+        let mut vc = make_vclip();
+        vc.start = 2.0;
+        vc.duration = 2.0;
+        vc.fade_in = 0.0;
+        vc.fade_out = 0.0;
+        vc.transition_in = Some(TransitionIn {
+            kind: TransitionType::Wipeleft,
+            duration: 0.6,
+        });
+
+        let chain = build_media_clip_chain(&vc, 0, 0, "v0", 30.0);
+        // format=yuva420p を明示ステージ後、直ちにマスク段(1/4解像度、d=クリップローカル総尺)。
+        assert!(chain.contains("[v0p] format=yuva420p [v0fmt];"));
+        assert!(chain.contains("color=c=black:s=160x90:r=30.000000:d=2.000000[v0tinmb];"));
+        // wipeleft = 左から右へ表示領域が広がる: 255*lte(X*4, W*p)。
+        assert!(chain.contains("geq=lum='255*lte(X*4,640*(clip(T/(0.6),0,1)))':cb=128:cr=128,format=gray,scale=640:360[v0tinmask];"));
+        assert!(chain.contains("[v0fmt][v0tinmask]alphamerge[v0tinout];"));
+        // マスク適用後に scale 以降が続く。
+        assert!(chain.contains("[v0tinout] scale=w=iw*1.000000"));
+    }
+
+    #[test]
+    fn wiperight_wipeup_wipedown_mask_expr() {
+        for (kind, expected) in [
+            (
+                TransitionType::Wiperight,
+                "255*gte(X*4,640*(1-(clip(T/(0.6),0,1))))",
+            ),
+            (
+                TransitionType::Wipeup,
+                "255*lte(Y*4,360*(clip(T/(0.6),0,1)))",
+            ),
+            (
+                TransitionType::Wipedown,
+                "255*gte(Y*4,360*(1-(clip(T/(0.6),0,1))))",
+            ),
+        ] {
+            let mut vc = make_vclip();
+            vc.transition_in = Some(TransitionIn {
+                kind,
+                duration: 0.6,
+            });
+            let chain = build_media_clip_chain(&vc, 0, 0, "v0", 30.0);
+            assert!(
+                chain.contains(&format!("geq=lum='{expected}'")),
+                "kind={kind:?} を含まない: {chain}"
+            );
+        }
+    }
+
+    #[test]
+    fn dissolve_adds_extra_alpha_fade_independent_of_user_fade_in() {
+        let mut vc = make_vclip();
+        vc.fade_in = 0.5; // ユーザー fadeIn と独立に併記してよい。
+        vc.transition_in = Some(TransitionIn {
+            kind: TransitionType::Dissolve,
+            duration: 0.6,
+        });
+        let chain = build_media_clip_chain(&vc, 0, 0, "v0", 30.0);
+        assert!(chain.contains("fade=t=in:st=0:d=0.500000:alpha=1"));
+        assert!(chain.contains("fade=t=in:st=0:d=0.600000:alpha=1"));
+    }
+
+    #[test]
+    fn slide_overlay_uses_eval_frame_with_animated_x() {
+        let mut vc = make_vclip();
+        vc.start = 2.0;
+        vc.transform.x = 10.0;
+        vc.transition_in = Some(TransitionIn {
+            kind: TransitionType::Slideleft,
+            duration: 0.6,
+        });
+        let overlay = build_overlay("prev", "v0", &vc, "m0");
+        assert!(overlay.contains("eval=frame"));
+        assert!(overlay.contains(
+            "x='if(lt(t,2.000000+0.600000),((W-w)/2+10.000000)+((W)*(1-(t-(2.000000))/(0.600000))),((W-w)/2+10.000000))'"
+        ));
+
+        // slideright は符号が逆(左から入ってくる)。
+        vc.transition_in = Some(TransitionIn {
+            kind: TransitionType::Slideright,
+            duration: 0.6,
+        });
+        let overlay = build_overlay("prev", "v0", &vc, "m0");
+        assert!(overlay.contains("-((W)*(1-(t-(2.000000))/(0.600000)))"));
+
+        // トランジションが無いクリップは従来通り eval=init。
+        let vc_default = make_vclip();
+        let overlay_default = build_overlay("prev", "v0", &vc_default, "m0");
+        assert!(overlay_default.contains("eval=init"));
+    }
+
+    #[test]
+    fn drawtext_extended_style_params_are_emitted() {
+        let mut vc = make_vclip();
+        vc.input_index = None;
+        let mut text = make_text_style();
+        text.outline_color = Some("#000000".to_string());
+        text.outline_width = 4.0;
+        text.shadow_color = Some("#111111".to_string());
+        text.shadow_x = 3.0;
+        text.shadow_y = 3.0;
+        text.line_spacing = 10.0;
+        vc.text = Some(text);
+
+        let chain = build_drawtext_chain(&vc, "prev", "m0");
+        assert!(chain.contains("bordercolor=#000000:borderw=4.000000"));
+        assert!(chain.contains("shadowcolor=#111111:shadowx=3.000000:shadowy=3.000000"));
+        assert!(chain.contains("line_spacing=10.000000"));
+    }
+
+    #[test]
+    fn drawtext_dissolve_adds_alpha_expression() {
+        let mut vc = make_vclip();
+        vc.input_index = None;
+        vc.start = 1.0;
+        vc.text = Some(make_text_style());
+        vc.transition_in = Some(TransitionIn {
+            kind: TransitionType::Dissolve,
+            duration: 0.6,
+        });
+
+        let chain = build_drawtext_chain(&vc, "prev", "m0");
+        assert!(chain.contains("alpha='if(lt(t,1.000000+0.600000),(t-(1.000000))/(0.600000),1)'"));
     }
 
     /// 実機スモークテスト用: `RVE_SMOKE_OUT` にフィルタスクリプトを書き出す。

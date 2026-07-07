@@ -326,3 +326,200 @@ fn build_ffmpeg_args(spec: &ExportSpec, filter_script_path: &Path) -> Vec<String
 
     args
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::export::{
+        ClipTransform, ExportInput, TextAlign, TextStyle, TransitionIn, TransitionType, VClip,
+    };
+    use std::path::PathBuf;
+
+    /// A(0..2秒)/B(2..4秒、B.transitionIn duration=0.6)+縁取り/影付きテキストの
+    /// ExportSpec を組み立てる(DESIGN.md §14.1 実機スモークテスト用)。
+    fn build_transition_spec(video_path: &str, transition: TransitionType) -> ExportSpec {
+        let default_transform = ClipTransform {
+            x: 0.0,
+            y: 0.0,
+            scale: 1.0,
+            rotation: 0.0,
+        };
+
+        let clip_a = VClip {
+            input_index: Some(0),
+            start: 0.0,
+            duration: 2.0,
+            in_point: 0.0,
+            speed: 1.0,
+            opacity: 1.0,
+            transform: default_transform,
+            fade_in: 0.0,
+            fade_out: 0.0,
+            effects: vec![],
+            text: None,
+            asset_w: Some(640.0),
+            asset_h: Some(360.0),
+            is_image: false,
+            mosaics: vec![],
+            transition_in: None,
+            // 次の隣接クリップ B の transitionIn.duration ぶん延長する。
+            extend_tail: 0.6,
+            // test1.mp4(5秒)のうち A は 0..2秒しか使わないため、残り 3 秒が実素材延長に使える。
+            source_tail_avail: 3.0,
+        };
+
+        let clip_b = VClip {
+            input_index: Some(0),
+            start: 2.0,
+            duration: 2.0,
+            in_point: 0.0,
+            speed: 1.0,
+            opacity: 1.0,
+            transform: default_transform,
+            fade_in: 0.0,
+            fade_out: 0.0,
+            effects: vec![],
+            text: None,
+            asset_w: Some(640.0),
+            asset_h: Some(360.0),
+            is_image: false,
+            mosaics: vec![],
+            transition_in: Some(TransitionIn {
+                kind: transition,
+                duration: 0.6,
+            }),
+            extend_tail: 0.0,
+            source_tail_avail: 3.0,
+        };
+
+        let clip_text = VClip {
+            input_index: None,
+            start: 0.5,
+            duration: 3.0,
+            in_point: 0.0,
+            speed: 1.0,
+            opacity: 1.0,
+            transform: ClipTransform {
+                x: 0.0,
+                y: 120.0,
+                scale: 1.0,
+                rotation: 0.0,
+            },
+            fade_in: 0.0,
+            fade_out: 0.0,
+            effects: vec![],
+            text: Some(TextStyle {
+                content: "SOBA".to_string(),
+                font_family: "Meiryo".to_string(),
+                font_size: 60.0,
+                color: "#FFFFFF".to_string(),
+                bold: true,
+                align: TextAlign::Center,
+                background: None,
+                outline_color: Some("#000000".to_string()),
+                outline_width: 4.0,
+                shadow_color: Some("#333333".to_string()),
+                shadow_x: 3.0,
+                shadow_y: 3.0,
+                line_spacing: 0.0,
+            }),
+            asset_w: None,
+            asset_h: None,
+            is_image: false,
+            mosaics: vec![],
+            transition_in: None,
+            extend_tail: 0.0,
+            source_tail_avail: 0.0,
+        };
+
+        ExportSpec {
+            output_path: "out.mp4".to_string(), // 呼び出し側で上書きする。
+            width: 640,
+            height: 360,
+            fps: 30.0,
+            sample_rate: 44100,
+            duration_sec: 4.0,
+            video_codec: VideoCodec::H264,
+            quality: 23.0,
+            audio_bitrate_kbps: 128,
+            inputs: vec![ExportInput {
+                index: 0,
+                path: video_path.to_string(),
+                kind: AssetKind::Video,
+            }],
+            video_clips: vec![clip_a, clip_b, clip_text],
+            audio_clips: vec![],
+        }
+    }
+
+    /// 実機スモークテスト: dissolve/wipeleft/slideleft の 3 パターンで実際に ffmpeg 書き出しを行い、
+    /// exit 0 を確認したうえでトランジション中間時点(t≈2.3)のフレームを png 抽出する
+    /// (DESIGN.md §14.1)。`RVE_TRANSITION_SMOKE_VIDEO`(入力動画の絶対パス)と
+    /// `RVE_TRANSITION_SMOKE_DIR`(出力先ディレクトリ)を環境変数で指定して
+    /// `cargo test -- --ignored transition_smoke_test` のように実行する。
+    #[test]
+    #[ignore = "手動スモークテスト用(RVE_TRANSITION_SMOKE_VIDEO / RVE_TRANSITION_SMOKE_DIR を設定して実行)"]
+    fn transition_smoke_test_dissolve_wipeleft_slideleft() {
+        let video_path = match std::env::var("RVE_TRANSITION_SMOKE_VIDEO") {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+        let out_dir = match std::env::var("RVE_TRANSITION_SMOKE_DIR") {
+            Ok(p) => PathBuf::from(p),
+            Err(_) => return,
+        };
+
+        let ffmpeg = locate::locate_ffmpeg().expect("ffmpeg が見つかりません");
+
+        let cases: [(TransitionType, &str); 3] = [
+            (TransitionType::Dissolve, "dissolve"),
+            (TransitionType::Wipeleft, "wipeleft"),
+            (TransitionType::Slideleft, "slideleft"),
+        ];
+
+        for (transition, name) in cases {
+            let mut spec = build_transition_spec(&video_path, transition);
+            let out_path = out_dir.join(format!("p8_{name}.mp4"));
+            spec.output_path = out_path.to_string_lossy().to_string();
+
+            let filter_script_path =
+                filtergraph::write_filter_script(&format!("smoke_{name}"), &spec)
+                    .expect("filter script 書き出しに失敗");
+            let args = build_ffmpeg_args(&spec, &filter_script_path);
+
+            let mut cmd = Command::new(&ffmpeg);
+            cmd.args(&args);
+            no_window(&mut cmd);
+            let output = cmd.output().expect("ffmpeg 実行に失敗");
+            assert!(
+                output.status.success(),
+                "ffmpeg({name}) が失敗しました: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+
+            // トランジション中間時点(t≈2.3)のフレームを png 抽出。
+            let png_path = out_dir.join(format!("p8_{name}.png"));
+            let mut extract = Command::new(&ffmpeg);
+            extract.args([
+                "-y",
+                "-ss",
+                "2.3",
+                "-i",
+                &out_path.to_string_lossy(),
+                "-frames:v",
+                "1",
+                &png_path.to_string_lossy(),
+            ]);
+            no_window(&mut extract);
+            let extract_output = extract.output().expect("フレーム抽出に失敗");
+            assert!(
+                extract_output.status.success(),
+                "フレーム抽出({name})が失敗しました: {}",
+                String::from_utf8_lossy(extract_output.stderr.as_slice())
+            );
+            assert!(png_path.is_file());
+
+            let _ = std::fs::remove_file(&filter_script_path);
+        }
+    }
+}
